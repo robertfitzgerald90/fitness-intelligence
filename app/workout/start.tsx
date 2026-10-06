@@ -1,20 +1,31 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
 
 import { PlaceholderScreen } from '@/components/PlaceholderScreen';
+import { StartWorkoutScreen } from '@/features/train/StartWorkoutScreen';
 
-export default function StartWorkoutScreen() {
-  const { title, duration } = useLocalSearchParams<{ title?: string; duration?: string }>();
-  const sessionTitle = firstParam(title) ?? 'Workout';
-  const sessionDuration = firstParam(duration);
-  const session = sessionDuration ? `${sessionTitle} · ${sessionDuration} min` : sessionTitle;
+export default function StartWorkoutRoute() {
+  const params = useLocalSearchParams<{ title?: string; duration?: string; templateId?: string }>();
+  const templateId = firstParam(params.templateId);
+  const title = firstParam(params.title) ?? 'Workout';
+  const duration = firstParam(params.duration);
+  const session = duration ? `${title} · ${duration} min` : title;
+
+  if (!templateId) {
+    return (
+      <>
+        <Stack.Screen options={{ title }} />
+        <PlaceholderScreen
+          edges={['left', 'right', 'bottom']}
+          body={`${session} will open here. Logging sets comes in a later update.`}
+        />
+      </>
+    );
+  }
 
   return (
     <>
-      <Stack.Screen options={{ title: sessionTitle }} />
-      <PlaceholderScreen
-        edges={['left', 'right', 'bottom']}
-        body={`${session} will open here. Logging sets comes in a later update.`}
-      />
+      <Stack.Screen options={{ title }} />
+      <StartWorkoutScreen templateId={templateId} />
     </>
   );
 }
