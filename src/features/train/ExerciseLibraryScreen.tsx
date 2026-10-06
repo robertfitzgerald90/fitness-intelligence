@@ -10,6 +10,7 @@ import {
   getTemplateDraft,
 } from '@/application/train/drafts';
 import { listExercises, setExerciseFavorite } from '@/application/train/useCases';
+import { addExerciseToWorkout, getWorkoutSession } from '@/application/workout/useCases';
 import { AppText } from '@/components/AppText';
 import { Chip } from '@/components/Chip';
 import { EmptyState } from '@/components/EmptyState';
@@ -20,13 +21,14 @@ import { colors, spacing } from '@/design/tokens';
 import { exerciseCategories, type Exercise, type ExerciseCategory } from '@/domain/models/exercise';
 
 type Filter = 'all' | 'favorites' | ExerciseCategory;
-type Purpose = 'template' | 'session';
+type Purpose = 'template' | 'session' | 'logged';
 
 type Props = {
   purpose: Purpose;
+  sessionId?: string | null;
 };
 
-export function ExerciseLibraryScreen({ purpose }: Props) {
+export function ExerciseLibraryScreen({ purpose, sessionId = null }: Props) {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [query, setQuery] = useState('');
@@ -36,8 +38,16 @@ export function ExerciseLibraryScreen({ purpose }: Props) {
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      const draft = purpose === 'session' ? getSessionDraft() : getTemplateDraft();
-      setSelectedIds(draft?.exercises.map((exercise) => exercise.exerciseId) ?? []);
+      if (purpose === 'logged' && sessionId) {
+        void getWorkoutSession(sessionId).then((session) => {
+          if (!cancelled) {
+            setSelectedIds(session?.exercises.map((exercise) => exercise.exerciseId) ?? []);
+          }
+        });
+      } else {
+        const draft = purpose === 'session' ? getSessionDraft() : getTemplateDraft();
+        setSelectedIds(draft?.exercises.map((exercise) => exercise.exerciseId) ?? []);
+      }
       listExercises()
         .then((next) => {
           if (!cancelled) {
@@ -54,7 +64,7 @@ export function ExerciseLibraryScreen({ purpose }: Props) {
       return () => {
         cancelled = true;
       };
-    }, [purpose]),
+    }, [purpose, sessionId]),
   );
 
   const normalizedQuery = query.trim().toLowerCase();
@@ -69,6 +79,17 @@ export function ExerciseLibraryScreen({ purpose }: Props) {
 
   function selectExercise(exercise: Exercise): void {
     if (selectedIds.includes(exercise.id)) {
+      return;
+    }
+    if (purpose === 'logged') {
+      if (!sessionId) {
+        return;
+      }
+      void addExerciseToWorkout(sessionId, { exerciseId: exercise.id, name: exercise.name }).then((result) => {
+        if (result === 'added') {
+          router.back();
+        }
+      });
       return;
     }
     const draftExercise = {

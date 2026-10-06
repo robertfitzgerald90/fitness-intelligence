@@ -1,46 +1,19 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useLocalSearchParams } from 'expo-router';
 
-import { getWorkoutPreview } from '@/application/today/getTodayDashboard';
 import { PlaceholderScreen } from '@/components/PlaceholderScreen';
+import { WorkoutDetailScreen } from '@/features/workout/WorkoutDetailScreen';
 
-export default function WorkoutDetailScreen() {
+export default function WorkoutDetailRoute() {
   const { id } = useLocalSearchParams<{ id?: string }>();
-  const workoutId = Array.isArray(id) ? id[0] : id;
-  const [preview, setPreview] = useState<{ title: string; meta: string } | null | undefined>(undefined);
+  const workoutId = firstParam(id);
 
-  useEffect(() => {
-    if (!workoutId) {
-      return;
-    }
-    let cancelled = false;
-    getWorkoutPreview(workoutId)
-      .then((next) => {
-        if (!cancelled) {
-          setPreview(next);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setPreview(null);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [workoutId]);
+  if (!workoutId) {
+    return <PlaceholderScreen edges={['left', 'right', 'bottom']} body="This workout is not available." />;
+  }
 
-  const title = preview?.title ?? 'Workout';
-  const body = preview
-    ? `${preview.meta}. The full workout detail comes in a later update.`
-    : preview === null
-      ? "This workout isn't available."
-      : 'Opening this workout.';
+  return <WorkoutDetailScreen workoutId={workoutId} />;
+}
 
-  return (
-    <>
-      <Stack.Screen options={{ title }} />
-      <PlaceholderScreen edges={['left', 'right', 'bottom']} body={body} />
-    </>
-  );
+function firstParam(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }

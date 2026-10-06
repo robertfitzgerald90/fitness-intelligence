@@ -19,6 +19,8 @@ export default function RootLayout() {
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="workout/start" options={{ title: 'Start workout' }} />
+        <Stack.Screen name="workout/active" options={{ title: 'Workout' }} />
+        <Stack.Screen name="workout/complete" options={{ title: 'Workout complete' }} />
         <Stack.Screen name="workout/[id]" options={{ title: 'Workout' }} />
         <Stack.Screen name="template/new" options={{ title: 'New workout' }} />
         <Stack.Screen name="template/[id]" options={{ title: 'Edit workout' }} />

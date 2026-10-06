@@ -7,10 +7,11 @@ type Props = {
   label: string;
   value: string;
   onChangeText: (value: string) => void;
+  onEndEditing?: () => void;
   placeholder?: string;
 };
 
-export function TextField({ label, value, onChangeText, placeholder }: Props) {
+export function TextField({ label, value, onChangeText, onEndEditing, placeholder }: Props) {
   return (
     <View style={styles.field}>
       <AppText role="caption" color="textMuted">
@@ -19,6 +20,7 @@ export function TextField({ label, value, onChangeText, placeholder }: Props) {
       <TextInput
         value={value}
         onChangeText={onChangeText}
+        onEndEditing={onEndEditing}
         placeholder={placeholder}
         placeholderTextColor={colors.textMuted}
         accessibilityLabel={label}

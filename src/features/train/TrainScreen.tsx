@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import {
@@ -8,6 +8,8 @@ import {
   beginSessionDraft,
 } from '@/application/train/drafts';
 import { getWorkoutTemplate, listWorkoutTemplates } from '@/application/train/useCases';
+import { formatStartedAgo } from '@/application/workout/format';
+import { getActiveWorkout } from '@/application/workout/useCases';
 import { AppText } from '@/components/AppText';
 import { Card } from '@/components/Card';
 import { EmptyState } from '@/components/EmptyState';
@@ -15,15 +17,19 @@ import { Screen } from '@/components/Screen';
 import { SectionLabel } from '@/components/SectionLabel';
 import { TextAction } from '@/components/TextAction';
 import { spacing } from '@/design/tokens';
+import type { StrengthSession } from '@/domain/models/strengthSession';
 import type { WorkoutTemplateSummary } from '@/domain/models/workoutTemplate';
 
 export function TrainScreen() {
   const [templates, setTemplates] = useState<WorkoutTemplateSummary[] | null>(null);
+  const [active, setActive] = useState<StrengthSession | null>(null);
+  const [now, setNow] = useState(() => new Date());
   const [failed, setFailed] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
+      setNow(new Date());
       listWorkoutTemplates()
         .then((next) => {
           if (!cancelled) {
@@ -36,11 +42,30 @@ export function TrainScreen() {
             setFailed(true);
           }
         });
+      void getActiveWorkout()
+        .then((next) => {
+          if (!cancelled) {
+            setActive(next);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setActive(null);
+          }
+        });
       return () => {
         cancelled = true;
       };
     }, []),
   );
+
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+    const timer = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(timer);
+  }, [active]);
 
   return (
     <Screen>
@@ -51,6 +76,18 @@ export function TrainScreen() {
             What do you want to train?
           </AppText>
         </View>
+        {active ? (
+          <Card>
+            <AppText role="caption" color="textMuted">
+              Workout in progress
+            </AppText>
+            <AppText role="title2">{active.name}</AppText>
+            <AppText role="small" color="textSecondary">
+              {formatStartedAgo(active.startedAt, now)}
+            </AppText>
+            <TextAction label="Resume workout" onPress={() => router.push('/workout/active')} />
+          </Card>
+        ) : null}
         <SectionLabel>Saved workouts</SectionLabel>
         {failed ? (
           <EmptyState title="Train is unavailable" message="Saved workouts could not load right now." />

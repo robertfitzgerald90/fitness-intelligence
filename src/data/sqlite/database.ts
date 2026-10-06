@@ -3,7 +3,7 @@ import * as SQLite from 'expo-sqlite';
 import { builtinExercises } from '@/data/seed/exerciseCatalog';
 import { starterTemplates } from '@/data/seed/starterTemplates';
 
-const DATABASE_VERSION = 1;
+const DATABASE_VERSION = 2;
 const SEEDED_AT = '2026-01-01T00:00:00.000Z';
 
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -27,12 +27,12 @@ async function openDatabase(): Promise<SQLite.SQLiteDatabase> {
 
 async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
   const result = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
-  const currentVersion = result?.user_version ?? 0;
+  let currentVersion = Number(result?.user_version ?? 0);
   if (currentVersion >= DATABASE_VERSION) {
     return;
   }
 
-  if (currentVersion === 0) {
+  if (currentVersion < 1) {
     await db.execAsync(`
       PRAGMA journal_mode = WAL;
       CREATE TABLE IF NOT EXISTS exercises (
@@ -62,9 +62,60 @@ async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
         ON workout_template_exercises (workout_template_id, sort_order);
     `);
     await seedFreshDatabase(db);
+    await db.execAsync('PRAGMA user_version = 1');
+    currentVersion = 1;
   }
 
-  await db.execAsync(`PRAGMA user_version = ${DATABASE_VERSION}`);
+  if (currentVersion < 2) {
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS workout_sessions (
+        id TEXT PRIMARY KEY NOT NULL,
+        source_template_id TEXT,
+        name TEXT NOT NULL,
+        status TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        completed_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (source_template_id) REFERENCES workout_templates(id) ON DELETE SET NULL
+      );
+      CREATE TABLE IF NOT EXISTS workout_session_exercises (
+        id TEXT PRIMARY KEY NOT NULL,
+        workout_session_id TEXT NOT NULL,
+        exercise_id TEXT NOT NULL,
+        exercise_name_snapshot TEXT NOT NULL,
+        sort_order INTEGER NOT NULL,
+        note TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (workout_session_id) REFERENCES workout_sessions(id) ON DELETE CASCADE,
+        FOREIGN KEY (exercise_id) REFERENCES exercises(id)
+      );
+      CREATE TABLE IF NOT EXISTS workout_sets (
+        id TEXT PRIMARY KEY NOT NULL,
+        workout_session_exercise_id TEXT NOT NULL,
+        sort_order INTEGER NOT NULL,
+        weight REAL,
+        reps INTEGER,
+        is_completed INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (workout_session_exercise_id) REFERENCES workout_session_exercises(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_session_exercises_order
+        ON workout_session_exercises (workout_session_id, sort_order);
+      CREATE INDEX IF NOT EXISTS idx_session_exercises_exercise
+        ON workout_session_exercises (exercise_id);
+      CREATE INDEX IF NOT EXISTS idx_workout_sets_order
+        ON workout_sets (workout_session_exercise_id, sort_order);
+      CREATE INDEX IF NOT EXISTS idx_workout_sessions_completed
+        ON workout_sessions (status, completed_at);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_workout_sessions_one_active
+        ON workout_sessions (status)
+        WHERE status = 'active';
+    `);
+    await db.execAsync('PRAGMA user_version = 2');
+  }
 }
 
 async function seedFreshDatabase(db: SQLite.SQLiteDatabase): Promise<void> {

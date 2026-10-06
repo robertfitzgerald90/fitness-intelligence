@@ -1,0 +1,162 @@
+import type { RepresentativePerformance, WeightComparison } from '@/domain/analytics/workingWeight';
+
+export function formatWeight(weight: number): string {
+  const rounded = Math.round(weight * 100) / 100;
+  return rounded.toFixed(2).replace(/\.?0+$/, '');
+}
+
+export function formatElapsed(startedAt: string, now: Date): string {
+  const started = Date.parse(startedAt);
+  if (Number.isNaN(started)) {
+    return '0:00';
+  }
+  const totalSeconds = Math.max(0, Math.floor((now.getTime() - started) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const paddedMinutes = minutes.toString().padStart(2, '0');
+  const paddedSeconds = seconds.toString().padStart(2, '0');
+  if (hours > 0) {
+    return `${hours}:${paddedMinutes}:${paddedSeconds}`;
+  }
+  return `${minutes}:${paddedSeconds}`;
+}
+
+export function formatStartedAgo(startedAt: string, now: Date): string {
+  const started = Date.parse(startedAt);
+  if (Number.isNaN(started)) {
+    return 'Started just now';
+  }
+  const minutes = Math.floor(Math.max(0, now.getTime() - started) / 60000);
+  if (minutes < 1) {
+    return 'Started just now';
+  }
+  if (minutes === 1) {
+    return 'Started 1 min ago';
+  }
+  if (minutes < 60) {
+    return `Started ${minutes} min ago`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours === 1) {
+    return 'Started 1 hr ago';
+  }
+  return `Started ${hours} hr ago`;
+}
+
+export function formatDuration(startedAt: string, completedAt: string): string {
+  const started = Date.parse(startedAt);
+  const completed = Date.parse(completedAt);
+  if (Number.isNaN(started) || Number.isNaN(completed)) {
+    return 'Less than a minute';
+  }
+  const minutes = Math.round(Math.max(0, completed - started) / 60000);
+  if (minutes < 1) {
+    return 'Less than a minute';
+  }
+  if (minutes < 60) {
+    return `${minutes} min`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  const hourLabel = hours === 1 ? '1 hr' : `${hours} hr`;
+  if (remainder === 0) {
+    return hourLabel;
+  }
+  return `${hourLabel} ${remainder} min`;
+}
+
+export function formatWorkoutDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  return date.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+}
+
+export function formatSetLine(weight: number, reps: number): string {
+  return `${formatWeight(weight)} lb × ${reps}`;
+}
+
+export function previousPerformanceLabel(performance: RepresentativePerformance | null): string {
+  if (!performance) {
+    return 'No previous performance';
+  }
+  return `Last: ${formatSetLine(performance.weight, performance.reps)}`;
+}
+
+export function comparisonCopy(comparison: WeightComparison): { primary: string; secondary: string | null } {
+  switch (comparison.kind) {
+    case 'first':
+      return { primary: 'First recorded session', secondary: null };
+    case 'same':
+      return { primary: 'Same working weight', secondary: null };
+    case 'up':
+      return {
+        primary: `${formatWeight(comparison.from)} lb → ${formatWeight(comparison.to)} lb`,
+        secondary: `+${formatWeight(comparison.delta)} lb`,
+      };
+    case 'lower':
+      return {
+        primary: `${formatWeight(comparison.from)} lb → ${formatWeight(comparison.to)} lb`,
+        secondary: 'Lower working weight today',
+      };
+    default: {
+      const exhaustive: never = comparison;
+      return exhaustive;
+    }
+  }
+}
+
+export function sanitizeWeightInput(text: string): string {
+  const cleaned = text.replace(/[^0-9.]/g, '');
+  const dot = cleaned.indexOf('.');
+  if (dot === -1) {
+    return cleaned;
+  }
+  const whole = cleaned.slice(0, dot);
+  const fraction = cleaned.slice(dot + 1).replace(/\./g, '').slice(0, 2);
+  return `${whole}.${fraction}`;
+}
+
+export function sanitizeRepsInput(text: string): string {
+  return text.replace(/[^0-9]/g, '').slice(0, 4);
+}
+
+export function parseWeightInput(text: string): number | null {
+  const trimmed = text.trim();
+  if (trimmed === '') {
+    return null;
+  }
+  const normalized = trimmed.endsWith('.') ? trimmed.slice(0, -1) : trimmed;
+  if (!/^\d+(\.\d{1,2})?$/.test(normalized)) {
+    return null;
+  }
+  const value = Math.round(Number(normalized) * 100) / 100;
+  if (!Number.isFinite(value) || value < 0) {
+    return null;
+  }
+  return value;
+}
+
+export function parseRepsInput(text: string): number | null {
+  if (!/^\d+$/.test(text)) {
+    return null;
+  }
+  const value = Number(text);
+  if (!Number.isInteger(value) || value < 1) {
+    return null;
+  }
+  return value;
+}
+
+export function weightToInput(weight: number | null): string {
+  if (weight == null) {
+    return '';
+  }
+  return formatWeight(weight);
+}
+
+export function isUsableLoggedSet(weight: number | null, reps: number | null): boolean {
+  return weight != null && reps != null;
+}

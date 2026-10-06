@@ -66,6 +66,10 @@ export function getSessionDraft(): SessionDraft | null {
   return sessionDraft;
 }
 
+export function clearSessionDraft(): void {
+  sessionDraft = null;
+}
+
 export function beginSessionDraft(template: WorkoutTemplate): SessionDraft {
   sessionDraft = {
     templateId: template.id,
