@@ -1,5 +1,5 @@
 import { trainContainer } from '@/application/train/container';
-import { exerciseCategories, isExerciseCategory, type Exercise } from '@/domain/models/exercise';
+import { exerciseCategories, isExerciseCategory, isExerciseLoggingType, type Exercise } from '@/domain/models/exercise';
 import type { WorkoutTemplate, WorkoutTemplateSummary } from '@/domain/models/workoutTemplate';
 
 export async function listWorkoutTemplates(): Promise<WorkoutTemplateSummary[]> {
@@ -49,7 +49,8 @@ export async function setExerciseFavorite(id: string, isFavorite: boolean): Prom
 export async function createCustomExercise(input: {
   name: string;
   category: string | null;
-}): Promise<{ ok: true; exercise: Exercise } | { ok: false; reason: 'name' | 'category' }> {
+  loggingType: string | null;
+}): Promise<{ ok: true; exercise: Exercise } | { ok: false; reason: 'name' | 'category' | 'tracking' }> {
   const name = input.name.trim();
   if (name.length === 0) {
     return { ok: false, reason: 'name' };
@@ -57,6 +58,13 @@ export async function createCustomExercise(input: {
   if (!input.category || !isExerciseCategory(input.category)) {
     return { ok: false, reason: 'category' };
   }
-  const exercise = await trainContainer.exercises.createCustom({ name, category: input.category });
+  if (!input.loggingType || !isExerciseLoggingType(input.loggingType)) {
+    return { ok: false, reason: 'tracking' };
+  }
+  const exercise = await trainContainer.exercises.createCustom({
+    name,
+    category: input.category,
+    loggingType: input.loggingType,
+  });
   return { ok: true, exercise };
 }

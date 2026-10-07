@@ -26,9 +26,10 @@ import { ExerciseLogCard } from '@/features/workout/ExerciseLogCard';
 export function ActiveWorkoutScreen() {
   const [session, setSession] = useState<StrengthSession | null | undefined>(undefined);
   const [previous, setPrevious] = useState<Record<string, string>>({});
-  const [now, setNow] = useState(() => new Date());
+  const [focusSetId, setFocusSetId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
+  const clearFocus = useCallback(() => setFocusSetId(null), []);
 
   const reload = useCallback(async () => {
     setSession(await getActiveWorkout());
@@ -56,11 +57,6 @@ export function ActiveWorkoutScreen() {
   );
 
   useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
       if (state !== 'active') {
         void flushWorkoutWrites();
@@ -77,7 +73,12 @@ export function ActiveWorkoutScreen() {
     const current = session;
     void Promise.all(
       current.exercises.map(async (exercise) => {
-        const performance = await getPreviousPerformance(exercise.exerciseId, current.id, current.startedAt);
+        const performance = await getPreviousPerformance(
+          exercise.exerciseId,
+          exercise.loggingType,
+          current.id,
+          current.startedAt,
+        );
         return [exercise.id, previousPerformanceLabel(performance)] as const;
       }),
     ).then((entries) => {
@@ -160,9 +161,7 @@ export function ActiveWorkoutScreen() {
       >
         <View style={styles.header}>
           <AppText role="title1">{session.name}</AppText>
-          <AppText role="body" color="textSecondary">
-            {formatElapsed(session.startedAt, now)}
-          </AppText>
+          <ElapsedTime startedAt={session.startedAt} />
         </View>
         {session.exercises.length === 0 ? (
           <AppText role="body" color="textSecondary">
@@ -177,8 +176,15 @@ export function ActiveWorkoutScreen() {
             editable
             canMoveUp={index > 0}
             canMoveDown={index < session.exercises.length - 1}
+            focusSetId={focusSetId}
+            onFocusHandled={clearFocus}
             onAddSet={() => {
-              void addWorkoutSet(exercise.id).then(() => reload());
+              void addWorkoutSet(exercise.id).then(async (created) => {
+                await reload();
+                if (created) {
+                  setFocusSetId(created.id);
+                }
+              });
             }}
             onRemoveSet={(setId) => {
               void removeWorkoutSet(setId).then(() => reload());
@@ -209,11 +215,24 @@ export function ActiveWorkoutScreen() {
   );
 }
 
+function ElapsedTime({ startedAt }: { startedAt: string }) {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return (
+    <AppText role="body" color="textSecondary">
+      {formatElapsed(startedAt, now)}
+    </AppText>
+  );
+}
+
 const styles = StyleSheet.create({
   content: {
     paddingTop: spacing[4],
     paddingBottom: spacing[8],
-    gap: spacing[5],
+    gap: spacing[4],
   },
   header: {
     gap: spacing[1],

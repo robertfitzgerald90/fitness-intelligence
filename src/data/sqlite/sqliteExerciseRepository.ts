@@ -1,12 +1,13 @@
 import { createId } from '@/data/sqlite/createId';
 import { getDatabase } from '@/data/sqlite/database';
 import type { ExerciseRepository } from '@/data/repositories/exerciseRepository';
-import { isExerciseCategory, type Exercise } from '@/domain/models/exercise';
+import { isExerciseCategory, isExerciseLoggingType, type Exercise } from '@/domain/models/exercise';
 
 type ExerciseRow = {
   id: string;
   name: string;
   category: string;
+  logging_type: string;
   is_custom: number;
   is_favorite: number;
   created_at: string;
@@ -17,7 +18,7 @@ export const sqliteExerciseRepository: ExerciseRepository = {
   async list() {
     const db = await getDatabase();
     const rows = await db.getAllAsync<ExerciseRow>(
-      'SELECT id, name, category, is_custom, is_favorite, created_at, updated_at FROM exercises ORDER BY name COLLATE NOCASE ASC',
+      'SELECT id, name, category, logging_type, is_custom, is_favorite, created_at, updated_at FROM exercises ORDER BY name COLLATE NOCASE ASC',
     );
     return rows.map(toExercise);
   },
@@ -34,17 +35,19 @@ export const sqliteExerciseRepository: ExerciseRepository = {
       id: createId('ex'),
       name: input.name,
       category: input.category,
+      loggingType: input.loggingType,
       isCustom: true,
       isFavorite: false,
       createdAt: now,
       updatedAt: now,
     };
     await db.runAsync(
-      `INSERT INTO exercises (id, name, category, is_custom, is_favorite, created_at, updated_at)
-       VALUES (?, ?, ?, 1, 0, ?, ?)`,
+      `INSERT INTO exercises (id, name, category, logging_type, is_custom, is_favorite, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 1, 0, ?, ?)`,
       exercise.id,
       exercise.name,
       exercise.category,
+      exercise.loggingType,
       exercise.createdAt,
       exercise.updatedAt,
     );
@@ -60,6 +63,7 @@ function toExercise(row: ExerciseRow): Exercise {
     id: row.id,
     name: row.name,
     category: row.category,
+    loggingType: isExerciseLoggingType(row.logging_type) ? row.logging_type : 'weight_reps',
     isCustom: row.is_custom === 1,
     isFavorite: row.is_favorite === 1,
     createdAt: row.created_at,

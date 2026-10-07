@@ -3,7 +3,7 @@ import * as SQLite from 'expo-sqlite';
 import { builtinExercises } from '@/data/seed/exerciseCatalog';
 import { starterTemplates } from '@/data/seed/starterTemplates';
 
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 3;
 const SEEDED_AT = '2026-01-01T00:00:00.000Z';
 
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -115,6 +115,24 @@ async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
         WHERE status = 'active';
     `);
     await db.execAsync('PRAGMA user_version = 2');
+    currentVersion = 2;
+  }
+
+  if (currentVersion < 3) {
+    const exerciseColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(exercises)');
+    if (!exerciseColumns.some((column) => column.name === 'logging_type')) {
+      await db.execAsync(
+        `ALTER TABLE exercises ADD COLUMN logging_type TEXT NOT NULL DEFAULT 'weight_reps'`,
+      );
+    }
+    const setColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(workout_sets)');
+    if (!setColumns.some((column) => column.name === 'duration_seconds')) {
+      await db.execAsync('ALTER TABLE workout_sets ADD COLUMN duration_seconds INTEGER');
+    }
+    for (const exercise of builtinExercises) {
+      await db.runAsync('UPDATE exercises SET logging_type = ? WHERE id = ?', exercise.loggingType, exercise.id);
+    }
+    await db.execAsync('PRAGMA user_version = 3');
   }
 }
 

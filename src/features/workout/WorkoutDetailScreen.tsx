@@ -30,6 +30,8 @@ export function WorkoutDetailScreen({ workoutId }: Props) {
   const [session, setSession] = useState<StrengthSession | null | undefined>(undefined);
   const [seedPreview, setSeedPreview] = useState<{ title: string; meta: string } | null | undefined>(undefined);
   const [editing, setEditing] = useState(false);
+  const [focusSetId, setFocusSetId] = useState<string | null>(null);
+  const clearFocus = useCallback(() => setFocusSetId(null), []);
   const editingRef = useRef(false);
   const [name, setName] = useState('');
   const [nameMessage, setNameMessage] = useState<string | null>(null);
@@ -177,8 +179,15 @@ export function WorkoutDetailScreen({ workoutId }: Props) {
             editable={editing}
             canMoveUp={index > 0}
             canMoveDown={index < completed.exercises.length - 1}
+            focusSetId={focusSetId}
+            onFocusHandled={clearFocus}
             onAddSet={() => {
-              void addWorkoutSet(exercise.id).then(() => reload());
+              void addWorkoutSet(exercise.id).then(async (created) => {
+                await reload();
+                if (created) {
+                  setFocusSetId(created.id);
+                }
+              });
             }}
             onRemoveSet={(setId) => {
               void removeWorkoutSet(setId).then(() => reload());

@@ -6,12 +6,16 @@ import type {
   CompletedSetRecord,
   WorkoutSessionRepository,
 } from '@/data/repositories/workoutSessionRepository';
+import { rememberedWorkingWeight } from '@/domain/analytics/workingWeight';
+import { isExerciseLoggingType, type ExerciseLoggingType } from '@/domain/models/exercise';
 import {
   isStrengthSessionStatus,
   type StrengthSession,
   type StrengthSessionExercise,
   type StrengthSet,
 } from '@/domain/models/strengthSession';
+
+const DEFAULT_SET_COUNT = 3;
 
 type SessionRow = {
   id: string;
@@ -28,6 +32,7 @@ type ExerciseRow = {
   id: string;
   exercise_id: string;
   exercise_name_snapshot: string;
+  logging_type: string;
   sort_order: number;
   note: string | null;
   created_at: string;
@@ -40,6 +45,7 @@ type SetRow = {
   sort_order: number;
   weight: number | null;
   reps: number | null;
+  duration_seconds: number | null;
   is_completed: number;
   created_at: string;
   updated_at: string;
@@ -90,11 +96,12 @@ export const sqliteWorkoutSessionRepository: WorkoutSessionRepository = {
           if (!exercise) {
             continue;
           }
+          const sessionExerciseId = createId('sse');
           await db.runAsync(
             `INSERT INTO workout_session_exercises
                (id, workout_session_id, exercise_id, exercise_name_snapshot, sort_order, note, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, NULL, ?, ?)`,
-            createId('sse'),
+            sessionExerciseId,
             sessionId,
             exercise.exerciseId,
             exercise.name,
@@ -102,6 +109,7 @@ export const sqliteWorkoutSessionRepository: WorkoutSessionRepository = {
             now,
             now,
           );
+          await insertDefaultSets(db, sessionExerciseId, exercise.exerciseId, now);
         }
       });
     } catch (error) {
@@ -148,9 +156,10 @@ export const sqliteWorkoutSessionRepository: WorkoutSessionRepository = {
          INNER JOIN workout_session_exercises e ON e.id = s.workout_session_exercise_id
          WHERE e.workout_session_id = ?
            AND s.is_completed = 1
-           AND s.weight IS NOT NULL
-           AND s.reps IS NOT NULL
-           AND s.reps >= 1`,
+           AND (
+             (s.reps IS NOT NULL AND s.reps >= 1)
+             OR (s.duration_seconds IS NOT NULL AND s.duration_seconds >= 1)
+           )`,
         id,
       );
       if (!completed || Number(completed.count) < 1) {
@@ -208,10 +217,11 @@ export const sqliteWorkoutSessionRepository: WorkoutSessionRepository = {
     const now = nowIso();
     await db.runAsync(
       `UPDATE workout_sets
-       SET weight = ?, reps = ?, is_completed = ?, updated_at = ?
+       SET weight = ?, reps = ?, duration_seconds = ?, is_completed = ?, updated_at = ?
        WHERE id = ?`,
       input.weight,
       input.reps,
+      input.durationSeconds,
       input.isCompleted ? 1 : 0,
       now,
       input.setId,
@@ -222,13 +232,14 @@ export const sqliteWorkoutSessionRepository: WorkoutSessionRepository = {
 
   async addSet(sessionExerciseId) {
     const db = await getDatabase();
-    const parent = await db.getFirstAsync<{ session_id: string }>(
-      'SELECT workout_session_id AS session_id FROM workout_session_exercises WHERE id = ?',
+    const parent = await db.getFirstAsync<{ session_id: string; exercise_id: string }>(
+      'SELECT workout_session_id AS session_id, exercise_id FROM workout_session_exercises WHERE id = ?',
       sessionExerciseId,
     );
     if (!parent) {
       return null;
     }
+    const loggingType = await loggingTypeFor(db, parent.exercise_id);
     const previous = await db.getFirstAsync<{ weight: number | null; sort_order: number }>(
       `SELECT weight, sort_order
        FROM workout_sets
@@ -241,16 +252,17 @@ export const sqliteWorkoutSessionRepository: WorkoutSessionRepository = {
     const set: StrengthSet = {
       id: createId('set'),
       sortOrder: previous ? previous.sort_order + 1 : 0,
-      weight: previous?.weight ?? null,
+      weight: loggingType === 'reps' ? null : (previous?.weight ?? null),
       reps: null,
+      durationSeconds: null,
       isCompleted: false,
       createdAt: now,
       updatedAt: now,
     };
     await db.runAsync(
       `INSERT INTO workout_sets
-         (id, workout_session_exercise_id, sort_order, weight, reps, is_completed, created_at, updated_at)
-       VALUES (?, ?, ?, ?, NULL, 0, ?, ?)`,
+         (id, workout_session_exercise_id, sort_order, weight, reps, duration_seconds, is_completed, created_at, updated_at)
+       VALUES (?, ?, ?, ?, NULL, NULL, 0, ?, ?)`,
       set.id,
       sessionExerciseId,
       set.sortOrder,
@@ -337,11 +349,12 @@ export const sqliteWorkoutSessionRepository: WorkoutSessionRepository = {
       sessionId,
     );
     const now = nowIso();
+    const sessionExerciseId = createId('sse');
     await db.runAsync(
       `INSERT INTO workout_session_exercises
          (id, workout_session_id, exercise_id, exercise_name_snapshot, sort_order, note, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, NULL, ?, ?)`,
-      createId('sse'),
+      sessionExerciseId,
       sessionId,
       exercise.exerciseId,
       exercise.name,
@@ -349,6 +362,7 @@ export const sqliteWorkoutSessionRepository: WorkoutSessionRepository = {
       now,
       now,
     );
+    await insertDefaultSets(db, sessionExerciseId, exercise.exerciseId, now);
     await touchSession(db, sessionId, now);
     return 'added';
   },
@@ -394,45 +408,7 @@ export const sqliteWorkoutSessionRepository: WorkoutSessionRepository = {
 
   async latestCompletedSets(exerciseId, excludeSessionId, beforeCompletedAt) {
     const db = await getDatabase();
-    const match = await db.getFirstAsync<{ exercise_row_id: string }>(
-      `SELECT e.id AS exercise_row_id
-       FROM workout_sessions sess
-       INNER JOIN workout_session_exercises e ON e.workout_session_id = sess.id
-       INNER JOIN workout_sets s ON s.workout_session_exercise_id = e.id
-       WHERE e.exercise_id = ?
-         AND sess.status = 'completed'
-         AND s.is_completed = 1
-         AND s.weight IS NOT NULL
-         AND s.reps IS NOT NULL
-         AND (? IS NULL OR sess.id != ?)
-         AND (? IS NULL OR sess.completed_at < ?)
-       ORDER BY sess.completed_at DESC, sess.id DESC
-       LIMIT 1`,
-      exerciseId,
-      excludeSessionId,
-      excludeSessionId,
-      beforeCompletedAt,
-      beforeCompletedAt,
-    );
-    if (!match) {
-      return [];
-    }
-    const rows = await db.getAllAsync<{ weight: number; reps: number; sort_order: number }>(
-      `SELECT weight, reps, sort_order
-       FROM workout_sets
-       WHERE workout_session_exercise_id = ?
-         AND is_completed = 1
-         AND weight IS NOT NULL
-         AND reps IS NOT NULL`,
-      match.exercise_row_id,
-    );
-    return rows.map(
-      (row): CompletedSetRecord => ({
-        weight: Number(row.weight),
-        reps: Number(row.reps),
-        sortOrder: Number(row.sort_order),
-      }),
-    );
+    return loadLatestCompletedSets(db, exerciseId, excludeSessionId, beforeCompletedAt);
   },
 };
 
@@ -449,6 +425,112 @@ function nowIso(): string {
 
 function isUniqueConstraint(error: unknown): boolean {
   return error instanceof Error && error.message.includes('UNIQUE constraint failed');
+}
+
+async function insertDefaultSets(
+  db: SQLite.SQLiteDatabase,
+  sessionExerciseId: string,
+  exerciseId: string,
+  now: string,
+): Promise<void> {
+  const loggingType = await loggingTypeFor(db, exerciseId);
+  const history = await loadLatestCompletedSets(db, exerciseId, null, null);
+  const weight = rememberedWorkingWeight(
+    loggingType,
+    history.map((set) => ({
+      weight: set.weight,
+      reps: set.reps,
+      durationSeconds: set.durationSeconds,
+      isCompleted: true,
+      sortOrder: set.sortOrder,
+    })),
+  );
+  for (let order = 0; order < DEFAULT_SET_COUNT; order += 1) {
+    await db.runAsync(
+      `INSERT INTO workout_sets
+         (id, workout_session_exercise_id, sort_order, weight, reps, duration_seconds, is_completed, created_at, updated_at)
+       VALUES (?, ?, ?, ?, NULL, NULL, 0, ?, ?)`,
+      createId('set'),
+      sessionExerciseId,
+      order,
+      loggingType === 'reps' ? null : weight,
+      now,
+      now,
+    );
+  }
+}
+
+async function loggingTypeFor(db: SQLite.SQLiteDatabase, exerciseId: string): Promise<ExerciseLoggingType> {
+  const row = await db.getFirstAsync<{ logging_type: string }>(
+    'SELECT logging_type FROM exercises WHERE id = ?',
+    exerciseId,
+  );
+  if (row && isExerciseLoggingType(row.logging_type)) {
+    return row.logging_type;
+  }
+  return 'weight_reps';
+}
+
+async function loadLatestCompletedSets(
+  db: SQLite.SQLiteDatabase,
+  exerciseId: string,
+  excludeSessionId: string | null,
+  beforeCompletedAt: string | null,
+): Promise<CompletedSetRecord[]> {
+  const match = await db.getFirstAsync<{ exercise_row_id: string }>(
+    `SELECT e.id AS exercise_row_id
+     FROM workout_sessions sess
+     INNER JOIN workout_session_exercises e ON e.workout_session_id = sess.id
+     INNER JOIN workout_sets s ON s.workout_session_exercise_id = e.id
+     WHERE e.exercise_id = ?
+       AND sess.status = 'completed'
+       AND s.is_completed = 1
+       AND (
+         (s.reps IS NOT NULL AND s.reps >= 1)
+         OR (s.duration_seconds IS NOT NULL AND s.duration_seconds >= 1)
+       )
+       AND (? IS NULL OR sess.id != ?)
+       AND (? IS NULL OR sess.completed_at < ?)
+     ORDER BY sess.completed_at DESC, sess.id DESC
+     LIMIT 1`,
+    exerciseId,
+    excludeSessionId,
+    excludeSessionId,
+    beforeCompletedAt,
+    beforeCompletedAt,
+  );
+  if (!match) {
+    return [];
+  }
+  return loadCompletedSetRecords(db, match.exercise_row_id);
+}
+
+async function loadCompletedSetRecords(
+  db: SQLite.SQLiteDatabase,
+  sessionExerciseId: string,
+): Promise<CompletedSetRecord[]> {
+  const rows = await db.getAllAsync<{
+    weight: number | null;
+    reps: number | null;
+    duration_seconds: number | null;
+    sort_order: number;
+  }>(
+    `SELECT weight, reps, duration_seconds, sort_order
+     FROM workout_sets
+     WHERE workout_session_exercise_id = ?
+       AND is_completed = 1
+       AND (
+         (reps IS NOT NULL AND reps >= 1)
+         OR (duration_seconds IS NOT NULL AND duration_seconds >= 1)
+       )`,
+    sessionExerciseId,
+  );
+  return rows.map((row) => ({
+    weight: row.weight == null ? null : Number(row.weight),
+    reps: row.reps == null ? null : Number(row.reps),
+    durationSeconds: row.duration_seconds == null ? null : Number(row.duration_seconds),
+    sortOrder: Number(row.sort_order),
+  }));
 }
 
 async function touchSession(db: SQLite.SQLiteDatabase, sessionId: string, now: string): Promise<void> {
@@ -494,14 +576,17 @@ async function loadSession(db: SQLite.SQLiteDatabase, id: string): Promise<Stren
     return null;
   }
   const exerciseRows = await db.getAllAsync<ExerciseRow>(
-    `SELECT id, exercise_id, exercise_name_snapshot, sort_order, note, created_at, updated_at
-     FROM workout_session_exercises
-     WHERE workout_session_id = ?
-     ORDER BY sort_order ASC`,
+    `SELECT link.id, link.exercise_id, link.exercise_name_snapshot, link.sort_order, link.note,
+            link.created_at, link.updated_at, exercise.logging_type
+     FROM workout_session_exercises link
+     LEFT JOIN exercises exercise ON exercise.id = link.exercise_id
+     WHERE link.workout_session_id = ?
+     ORDER BY link.sort_order ASC`,
     id,
   );
   const setRows = await db.getAllAsync<SetRow>(
-    `SELECT s.id, s.workout_session_exercise_id, s.sort_order, s.weight, s.reps, s.is_completed, s.created_at, s.updated_at
+    `SELECT s.id, s.workout_session_exercise_id, s.sort_order, s.weight, s.reps, s.duration_seconds,
+            s.is_completed, s.created_at, s.updated_at
      FROM workout_sets s
      INNER JOIN workout_session_exercises e ON e.id = s.workout_session_exercise_id
      WHERE e.workout_session_id = ?
@@ -518,6 +603,7 @@ async function loadSession(db: SQLite.SQLiteDatabase, id: string): Promise<Stren
     id: exercise.id,
     exerciseId: exercise.exercise_id,
     exerciseNameSnapshot: exercise.exercise_name_snapshot,
+    loggingType: isExerciseLoggingType(exercise.logging_type) ? exercise.logging_type : 'weight_reps',
     sortOrder: Number(exercise.sort_order),
     note: exercise.note,
     sets: setsByExercise.get(exercise.id) ?? [],
@@ -543,6 +629,7 @@ function toSet(row: SetRow): StrengthSet {
     sortOrder: Number(row.sort_order),
     weight: row.weight == null ? null : Number(row.weight),
     reps: row.reps == null ? null : Number(row.reps),
+    durationSeconds: row.duration_seconds == null ? null : Number(row.duration_seconds),
     isCompleted: row.is_completed === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

@@ -1,8 +1,12 @@
 import { trainContainer } from '@/application/train/container';
 import type { SessionDraft } from '@/application/train/drafts';
 import { getWorkoutTemplate } from '@/application/train/useCases';
-import { isUsableLoggedSet } from '@/application/workout/format';
-import { compareWorkingWeight, representativePerformance } from '@/domain/analytics/workingWeight';
+import { isUsableLoggedSet, formatLoggedSet, performanceComparison } from '@/application/workout/format';
+import {
+  representativeExercisePerformance,
+  type ExercisePerformance,
+} from '@/domain/analytics/workingWeight';
+import type { ExerciseLoggingType } from '@/domain/models/exercise';
 import type { StrengthSession, StrengthSet } from '@/domain/models/strengthSession';
 
 const writeTails = new Map<string, Promise<void>>();
@@ -67,19 +71,23 @@ export async function finishWorkout(
 
 export function saveWorkoutSet(input: {
   setId: string;
+  loggingType: ExerciseLoggingType;
   weight: number | null;
   reps: number | null;
+  durationSeconds: number | null;
   isCompleted: boolean;
 }): Promise<{ ok: true } | { ok: false; reason: 'values' | 'missing' }> {
-  if (input.isCompleted && !isUsableLoggedSet(input.weight, input.reps)) {
+  const usable = isUsableLoggedSet(input.loggingType, input.weight, input.reps, input.durationSeconds);
+  if (input.isCompleted && !usable) {
     return Promise.resolve({ ok: false, reason: 'values' });
   }
-  const isCompleted = input.isCompleted && isUsableLoggedSet(input.weight, input.reps);
+  const isCompleted = input.isCompleted && usable;
   return enqueueWrite(input.setId, async () => {
     const saved = await trainContainer.sessions.updateSet({
       setId: input.setId,
       weight: input.weight,
       reps: input.reps,
+      durationSeconds: input.durationSeconds,
       isCompleted,
     });
     if (!saved) {
@@ -161,14 +169,17 @@ export async function moveWorkoutExercise(
 
 export async function getPreviousPerformance(
   exerciseId: string,
+  loggingType: ExerciseLoggingType,
   excludeSessionId: string | null,
   beforeCompletedAt: string | null,
-): Promise<{ weight: number; reps: number } | null> {
+): Promise<ExercisePerformance | null> {
   const sets = await trainContainer.sessions.latestCompletedSets(exerciseId, excludeSessionId, beforeCompletedAt);
-  return representativePerformance(
+  return representativeExercisePerformance(
+    loggingType,
     sets.map((set) => ({
       weight: set.weight,
       reps: set.reps,
+      durationSeconds: set.durationSeconds,
       isCompleted: true,
       sortOrder: set.sortOrder,
     })),
@@ -179,8 +190,8 @@ export type WorkoutExerciseSummary = {
   id: string;
   name: string;
   note: string | null;
-  sets: { id: string; weight: number; reps: number }[];
-  comparison: ReturnType<typeof compareWorkingWeight>;
+  sets: { id: string; line: string }[];
+  comparison: ReturnType<typeof performanceComparison>;
 };
 
 export type WorkoutSummary = {
@@ -200,19 +211,26 @@ export async function getWorkoutSummary(sessionId: string): Promise<WorkoutSumma
   }
   const exercises: WorkoutExerciseSummary[] = [];
   for (const exercise of session.exercises) {
-    const current = representativePerformance(exercise.sets);
+    const current = representativeExercisePerformance(exercise.loggingType, exercise.sets);
     if (!current) {
       continue;
     }
-    const previous = await getPreviousPerformance(exercise.exerciseId, session.id, session.completedAt);
+    const previous = await getPreviousPerformance(
+      exercise.exerciseId,
+      exercise.loggingType,
+      session.id,
+      session.completedAt,
+    );
+    const lines = exercise.sets.flatMap((set) => {
+      const line = formatLoggedSet(exercise.loggingType, set);
+      return line ? [{ id: set.id, line }] : [];
+    });
     exercises.push({
       id: exercise.id,
       name: exercise.exerciseNameSnapshot,
       note: exercise.note,
-      sets: exercise.sets
-        .filter((set) => set.isCompleted && set.weight != null && set.reps != null)
-        .map((set) => ({ id: set.id, weight: set.weight as number, reps: set.reps as number })),
-      comparison: compareWorkingWeight(current, previous),
+      sets: lines,
+      comparison: performanceComparison(current, previous),
     });
   }
   const setCount = exercises.reduce((count, exercise) => count + exercise.sets.length, 0);

@@ -15,12 +15,14 @@ export type UpdateStrengthSetInput = {
   setId: string;
   weight: number | null;
   reps: number | null;
+  durationSeconds: number | null;
   isCompleted: boolean;
 };
 
 export type CompletedSetRecord = {
-  weight: number;
-  reps: number;
+  weight: number | null;
+  reps: number | null;
+  durationSeconds: number | null;
   sortOrder: number;
 };
 

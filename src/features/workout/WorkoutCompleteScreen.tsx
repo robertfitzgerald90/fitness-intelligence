@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
-import { comparisonCopy, formatDuration, formatSetLine } from '@/application/workout/format';
+import { formatDuration } from '@/application/workout/format';
 import { getWorkoutSummary, type WorkoutSummary } from '@/application/workout/useCases';
 import { AppText } from '@/components/AppText';
 import { Screen } from '@/components/Screen';
@@ -46,30 +46,24 @@ export function WorkoutCompleteScreen({ sessionId }: Props) {
                 {`${formatDuration(summary.startedAt, summary.completedAt)} · ${countLabel(summary.exerciseCount, 'exercise')} · ${countLabel(summary.setCount, 'set')}`}
               </AppText>
             </View>
-            {summary.exercises.map((exercise) => {
-              const comparison = comparisonCopy(exercise.comparison);
-              return (
-                <View key={exercise.id} style={styles.exercise}>
-                  <AppText role="title3">{exercise.name}</AppText>
-                  {exercise.sets.map((set) => (
-                    <AppText key={set.id} role="body">
-                      {formatSetLine(set.weight, set.reps)}
-                    </AppText>
-                  ))}
-                  <AppText role="small" color="textSecondary">
-                    {comparison.primary}
+            {summary.exercises.map((exercise) => (
+              <View key={exercise.id} style={styles.exercise}>
+                <AppText role="title3">{exercise.name}</AppText>
+                {exercise.sets.map((set) => (
+                  <AppText key={set.id} role="body">
+                    {set.line}
                   </AppText>
-                  {comparison.secondary ? (
-                    <AppText
-                      role="small"
-                      color={exercise.comparison.kind === 'up' ? 'positive' : 'textSecondary'}
-                    >
-                      {comparison.secondary}
-                    </AppText>
-                  ) : null}
-                </View>
-              );
-            })}
+                ))}
+                <AppText role="small" color="textSecondary">
+                  {exercise.comparison.primary}
+                </AppText>
+                {exercise.comparison.secondary ? (
+                  <AppText role="small" color={exercise.comparison.improved ? 'positive' : 'textSecondary'}>
+                    {exercise.comparison.secondary}
+                  </AppText>
+                ) : null}
+              </View>
+            ))}
             <View style={styles.actions}>
               <TextAction
                 label="View workout"

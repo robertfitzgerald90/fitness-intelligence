@@ -1,11 +1,17 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import {
+  durationToInput,
+  formatLoggedSet,
+  incompleteSetMessage,
   isUsableLoggedSet,
+  parseDurationInput,
   parseRepsInput,
   parseWeightInput,
+  primarySetField,
+  sanitizeDurationInput,
   sanitizeRepsInput,
   sanitizeWeightInput,
   weightToInput,
@@ -14,7 +20,10 @@ import { saveExerciseNote, saveWorkoutSet } from '@/application/workout/useCases
 import { AppText } from '@/components/AppText';
 import { TextAction } from '@/components/TextAction';
 import { colors, radius, spacing } from '@/design/tokens';
+import type { ExerciseLoggingType } from '@/domain/models/exercise';
 import type { StrengthSessionExercise, StrengthSet } from '@/domain/models/strengthSession';
+
+type FieldName = 'weight' | 'reps' | 'duration';
 
 type Props = {
   exercise: StrengthSessionExercise;
@@ -22,6 +31,8 @@ type Props = {
   editable: boolean;
   canMoveUp: boolean;
   canMoveDown: boolean;
+  focusSetId?: string | null;
+  onFocusHandled?: () => void;
   onAddSet: () => void;
   onRemoveSet: (setId: string) => void;
   onMove?: (direction: -1 | 1) => void;
@@ -34,13 +45,42 @@ export function ExerciseLogCard({
   editable,
   canMoveUp,
   canMoveDown,
+  focusSetId = null,
+  onFocusHandled,
   onAddSet,
   onRemoveSet,
   onMove,
   onRemoveExercise,
 }: Props) {
-  const completedSets = exercise.sets.filter((set) => set.isCompleted && set.weight != null && set.reps != null);
-  const weightInputs = useRef<Record<string, TextInput | null>>({});
+  const inputs = useRef<Record<string, Partial<Record<FieldName, TextInput | null>>>>({});
+  const loggedLines = exercise.sets.flatMap((set) => {
+    const line = formatLoggedSet(exercise.loggingType, set);
+    return line ? [{ id: set.id, line }] : [];
+  });
+
+  useEffect(() => {
+    if (!focusSetId) {
+      return;
+    }
+    const set = exercise.sets.find((item) => item.id === focusSetId);
+    if (!set) {
+      return;
+    }
+    const field = primarySetField(exercise.loggingType, set.weight);
+    const timer = setTimeout(() => {
+      inputs.current[set.id]?.[field]?.focus();
+      onFocusHandled?.();
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [exercise.loggingType, exercise.sets, focusSetId, onFocusHandled]);
+
+  function focusSet(set: StrengthSet | undefined): void {
+    if (!set) {
+      return;
+    }
+    const field = primarySetField(exercise.loggingType, set.weight);
+    inputs.current[set.id]?.[field]?.focus();
+  }
 
   return (
     <View style={styles.block}>
@@ -80,7 +120,7 @@ export function ExerciseLogCard({
       ) : null}
       {editable ? (
         <>
-          {exercise.sets.length > 0 ? <SetColumns /> : null}
+          {exercise.sets.length > 0 ? <SetColumns loggingType={exercise.loggingType} /> : null}
           {exercise.sets.length === 0 ? (
             <AppText role="small" color="textMuted">
               No sets yet
@@ -91,15 +131,13 @@ export function ExerciseLogCard({
               key={set.id}
               set={set}
               index={index}
-              weightRef={(node) => {
-                weightInputs.current[set.id] = node;
+              loggingType={exercise.loggingType}
+              bindInput={(field, node) => {
+                const current = inputs.current[set.id] ?? {};
+                current[field] = node;
+                inputs.current[set.id] = current;
               }}
-              onRepsSubmit={() => {
-                const next = exercise.sets[index + 1];
-                if (next) {
-                  weightInputs.current[next.id]?.focus();
-                }
-              }}
+              onAdvance={() => focusSet(exercise.sets[index + 1])}
               onRemove={() => onRemoveSet(set.id)}
             />
           ))}
@@ -108,9 +146,9 @@ export function ExerciseLogCard({
         </>
       ) : (
         <>
-          {completedSets.map((set) => (
+          {loggedLines.map((set) => (
             <AppText key={set.id} role="body">
-              {`${formatCompleted(set)}`}
+              {set.line}
             </AppText>
           ))}
           {exercise.note ? (
@@ -124,11 +162,9 @@ export function ExerciseLogCard({
   );
 }
 
-function formatCompleted(set: StrengthSet): string {
-  return `${weightToInput(set.weight)} lb × ${set.reps ?? ''}`;
-}
-
-function SetColumns() {
+function SetColumns({ loggingType }: { loggingType: ExerciseLoggingType }) {
+  const labels =
+    loggingType === 'reps' ? ['Reps'] : loggingType === 'duration_weight' ? ['Duration', 'Weight'] : ['Weight', 'Reps'];
   return (
     <View style={styles.row}>
       <View style={styles.indexCol}>
@@ -136,16 +172,13 @@ function SetColumns() {
           Set
         </AppText>
       </View>
-      <View style={styles.valueCol}>
-        <AppText role="caption" color="textMuted">
-          Weight
-        </AppText>
-      </View>
-      <View style={styles.valueCol}>
-        <AppText role="caption" color="textMuted">
-          Reps
-        </AppText>
-      </View>
+      {labels.map((label) => (
+        <View key={label} style={styles.valueCol}>
+          <AppText role="caption" color="textMuted">
+            {label}
+          </AppText>
+        </View>
+      ))}
       <View style={styles.checkCol} />
     </View>
   );
@@ -154,76 +187,128 @@ function SetColumns() {
 function SetEntry({
   set,
   index,
+  loggingType,
   onRemove,
-  onRepsSubmit,
-  weightRef,
+  onAdvance,
+  bindInput,
 }: {
   set: StrengthSet;
   index: number;
+  loggingType: ExerciseLoggingType;
   onRemove: () => void;
-  onRepsSubmit: () => void;
-  weightRef: (node: TextInput | null) => void;
+  onAdvance: () => void;
+  bindInput: (field: FieldName, node: TextInput | null) => void;
 }) {
   const [weightText, setWeightText] = useState(weightToInput(set.weight));
   const [repsText, setRepsText] = useState(set.reps == null ? '' : String(set.reps));
+  const [durationText, setDurationText] = useState(durationToInput(set.durationSeconds));
   const [completed, setCompleted] = useState(set.isCompleted);
   const [message, setMessage] = useState<string | null>(null);
+  const weightRef = useRef<TextInput | null>(null);
   const repsRef = useRef<TextInput | null>(null);
+
+  function values() {
+    return {
+      weight: loggingType === 'reps' ? set.weight : parseWeightInput(weightText),
+      reps: loggingType === 'duration_weight' ? set.reps : parseRepsInput(repsText),
+      durationSeconds: loggingType === 'duration_weight' ? parseDurationInput(durationText) : set.durationSeconds,
+    };
+  }
+
+  function persist(nextCompleted: boolean, stillCompleted: boolean): void {
+    const next = values();
+    void saveWorkoutSet({
+      setId: set.id,
+      loggingType,
+      weight: next.weight,
+      reps: next.reps,
+      durationSeconds: next.durationSeconds,
+      isCompleted: nextCompleted ? stillCompleted : false,
+    });
+  }
+
+  function changeWeight(text: string): void {
+    const next = sanitizeWeightInput(text);
+    setWeightText(next);
+    const parsed = values();
+    parsed.weight = parseWeightInput(next);
+    const stillCompleted = completed && isUsableLoggedSet(loggingType, parsed.weight, parsed.reps, parsed.durationSeconds);
+    if (completed && !stillCompleted) {
+      setCompleted(false);
+    }
+    setMessage(null);
+    void saveWorkoutSet({
+      setId: set.id,
+      loggingType,
+      weight: parsed.weight,
+      reps: parsed.reps,
+      durationSeconds: parsed.durationSeconds,
+      isCompleted: stillCompleted,
+    });
+  }
+
+  function changeReps(text: string): void {
+    const next = sanitizeRepsInput(text);
+    setRepsText(next);
+    const parsed = values();
+    parsed.reps = parseRepsInput(next);
+    const stillCompleted = completed && isUsableLoggedSet(loggingType, parsed.weight, parsed.reps, parsed.durationSeconds);
+    if (completed && !stillCompleted) {
+      setCompleted(false);
+    }
+    setMessage(null);
+    void saveWorkoutSet({
+      setId: set.id,
+      loggingType,
+      weight: parsed.weight,
+      reps: parsed.reps,
+      durationSeconds: parsed.durationSeconds,
+      isCompleted: stillCompleted,
+    });
+  }
+
+  function changeDuration(text: string): void {
+    const next = sanitizeDurationInput(text);
+    setDurationText(next);
+    const parsed = values();
+    parsed.durationSeconds = parseDurationInput(next);
+    const stillCompleted = completed && isUsableLoggedSet(loggingType, parsed.weight, parsed.reps, parsed.durationSeconds);
+    if (completed && !stillCompleted) {
+      setCompleted(false);
+    }
+    setMessage(null);
+    void saveWorkoutSet({
+      setId: set.id,
+      loggingType,
+      weight: parsed.weight,
+      reps: parsed.reps,
+      durationSeconds: parsed.durationSeconds,
+      isCompleted: stillCompleted,
+    });
+  }
+
+  function toggleComplete(): void {
+    const parsed = values();
+    if (completed) {
+      setCompleted(false);
+      setMessage(null);
+      persist(false, false);
+      return;
+    }
+    if (!isUsableLoggedSet(loggingType, parsed.weight, parsed.reps, parsed.durationSeconds)) {
+      setMessage(incompleteSetMessage(loggingType));
+      return;
+    }
+    setCompleted(true);
+    setMessage(null);
+    persist(true, true);
+  }
 
   function confirmRemove(): void {
     Alert.alert(`Remove set ${index + 1}?`, undefined, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Remove', style: 'destructive', onPress: onRemove },
     ]);
-  }
-
-  function changeWeight(text: string): void {
-    const next = sanitizeWeightInput(text);
-    setWeightText(next);
-    const weight = parseWeightInput(next);
-    const reps = parseRepsInput(repsText);
-    const stillCompleted = completed && isUsableLoggedSet(weight, reps);
-    if (completed && !stillCompleted) {
-      setCompleted(false);
-    }
-    setMessage(null);
-    void saveWorkoutSet({ setId: set.id, weight, reps, isCompleted: stillCompleted });
-  }
-
-  function changeReps(text: string): void {
-    const next = sanitizeRepsInput(text);
-    setRepsText(next);
-    const weight = parseWeightInput(weightText);
-    const reps = parseRepsInput(next);
-    const stillCompleted = completed && isUsableLoggedSet(weight, reps);
-    if (completed && !stillCompleted) {
-      setCompleted(false);
-    }
-    setMessage(null);
-    void saveWorkoutSet({ setId: set.id, weight, reps, isCompleted: stillCompleted });
-  }
-
-  function toggleComplete(): void {
-    if (completed) {
-      setCompleted(false);
-      setMessage(null);
-      void saveWorkoutSet({
-        setId: set.id,
-        weight: parseWeightInput(weightText),
-        reps: parseRepsInput(repsText),
-        isCompleted: false,
-      });
-      return;
-    }
-    const weight = parseWeightInput(weightText);
-    const reps = parseRepsInput(repsText);
-    if (!isUsableLoggedSet(weight, reps)) {
-      setMessage('Enter a weight and reps.');
-      return;
-    }
-    setCompleted(true);
-    setMessage(null);
-    void saveWorkoutSet({ setId: set.id, weight, reps, isCompleted: true });
   }
 
   return (
@@ -239,41 +324,79 @@ function SetEntry({
             {index + 1}
           </AppText>
         </Pressable>
-        <TextInput
-          ref={weightRef}
-          value={weightText}
-          onChangeText={changeWeight}
-          onEndEditing={() => {
-            const weight = parseWeightInput(weightText);
-            if (weight != null) {
-              setWeightText(weightToInput(weight));
+        {loggingType === 'duration_weight' ? (
+          <TextInput
+            ref={(node) => bindInput('duration', node)}
+            value={durationText}
+            onChangeText={changeDuration}
+            onEndEditing={() => {
+              const duration = parseDurationInput(durationText);
+              if (duration != null) {
+                setDurationText(durationToInput(duration));
+              }
+            }}
+            onSubmitEditing={() => weightRef.current?.focus()}
+            keyboardType="number-pad"
+            inputMode="numeric"
+            returnKeyType="next"
+            blurOnSubmit={false}
+            selectTextOnFocus
+            placeholderTextColor={colors.textMuted}
+            accessibilityLabel={`Duration for set ${index + 1}`}
+            style={styles.input}
+          />
+        ) : null}
+        {loggingType !== 'reps' ? (
+          <TextInput
+            ref={(node) => {
+              weightRef.current = node;
+              bindInput('weight', node);
+            }}
+            value={weightText}
+            onChangeText={changeWeight}
+            onEndEditing={() => {
+              const weight = parseWeightInput(weightText);
+              if (weight != null) {
+                setWeightText(weightToInput(weight));
+              }
+            }}
+            onSubmitEditing={() => {
+              if (loggingType === 'weight_reps') {
+                repsRef.current?.focus();
+                return;
+              }
+              onAdvance();
+            }}
+            keyboardType="decimal-pad"
+            inputMode="decimal"
+            returnKeyType={loggingType === 'duration_weight' ? 'done' : 'next'}
+            blurOnSubmit={loggingType === 'duration_weight'}
+            selectTextOnFocus
+            placeholderTextColor={colors.textMuted}
+            accessibilityLabel={
+              loggingType === 'duration_weight' ? `Optional weight for set ${index + 1}` : `Weight for set ${index + 1}`
             }
-          }}
-          onSubmitEditing={() => repsRef.current?.focus()}
-          keyboardType="decimal-pad"
-          inputMode="decimal"
-          returnKeyType="next"
-          blurOnSubmit={false}
-          selectTextOnFocus
-          placeholderTextColor={colors.textMuted}
-          accessibilityLabel={`Weight for set ${index + 1}`}
-          style={styles.input}
-        />
-        <TextInput
-          ref={(node) => {
-            repsRef.current = node;
-          }}
-          value={repsText}
-          onChangeText={changeReps}
-          onSubmitEditing={onRepsSubmit}
-          keyboardType="number-pad"
-          inputMode="numeric"
-          returnKeyType="done"
-          selectTextOnFocus
-          placeholderTextColor={colors.textMuted}
-          accessibilityLabel={`Reps for set ${index + 1}`}
-          style={styles.input}
-        />
+            style={styles.input}
+          />
+        ) : null}
+        {loggingType !== 'duration_weight' ? (
+          <TextInput
+            ref={(node) => {
+              repsRef.current = node;
+              bindInput('reps', node);
+            }}
+            value={repsText}
+            onChangeText={changeReps}
+            onSubmitEditing={onAdvance}
+            keyboardType="number-pad"
+            inputMode="numeric"
+            returnKeyType="done"
+            selectTextOnFocus
+            placeholderTextColor={colors.textMuted}
+            accessibilityLabel={`Reps for set ${index + 1}`}
+            style={styles.input}
+          />
+        ) : null}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={completed ? `Mark set ${index + 1} incomplete` : `Complete set ${index + 1}`}
