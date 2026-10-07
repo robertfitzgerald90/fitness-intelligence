@@ -19,6 +19,20 @@ export type UpdateStrengthSetInput = {
   isCompleted: boolean;
 };
 
+export type CompletedExerciseSetRecord = {
+  sessionId: string;
+  sessionName: string;
+  startedAt: string;
+  completedAt: string;
+  exerciseId: string;
+  exerciseName: string;
+  loggingType: string;
+  weight: number | null;
+  reps: number | null;
+  durationSeconds: number | null;
+  sortOrder: number;
+};
+
 export type CompletedSessionInRange = {
   id: string;
   name: string;
@@ -58,4 +72,9 @@ export type WorkoutSessionRepository = {
   ): Promise<CompletedSetRecord[]>;
   getCompletedSessionsInRange(startInclusive: string, endExclusive: string): Promise<CompletedSessionInRange[]>;
   getRecentCompletedSessions(limit: number): Promise<CompletedSessionInRange[]>;
+  listCompletedExerciseSets(input: {
+    startInclusive: string | null;
+    endExclusive: string | null;
+    exerciseId?: string | null;
+  }): Promise<CompletedExerciseSetRecord[]>;
 };

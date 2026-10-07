@@ -6,25 +6,26 @@ import { colors } from '@/design/tokens';
 type Props = {
   points: number[];
   accessibilityLabel: string;
+  height?: number;
 };
 
-const HEIGHT = 84;
+const DEFAULT_HEIGHT = 84;
 
-export function CompactTrendChart({ points, accessibilityLabel }: Props) {
+export function CompactTrendChart({ points, accessibilityLabel, height = DEFAULT_HEIGHT }: Props) {
   const [width, setWidth] = useState(0);
 
   if (points.length < 2) {
     return null;
   }
 
-  const coordinates = width > 0 ? layoutPoints(points, width, HEIGHT) : [];
+  const coordinates = width > 0 ? layoutPoints(points, width, height) : [];
 
   return (
     <View
       accessible
       accessibilityRole="image"
       accessibilityLabel={accessibilityLabel}
-      style={styles.chart}
+      style={[styles.chart, { height }]}
       onLayout={(event) => {
         const nextWidth = event.nativeEvent.layout.width;
         if (nextWidth !== width) {
@@ -109,7 +110,7 @@ function dotPosition(point: Coordinate, size: number) {
 
 const styles = StyleSheet.create({
   chart: {
-    height: HEIGHT,
+    height: DEFAULT_HEIGHT,
   },
   dot: {
     position: 'absolute',

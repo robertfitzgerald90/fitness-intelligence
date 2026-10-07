@@ -3,6 +3,7 @@ import type * as SQLite from 'expo-sqlite';
 import { createId } from '@/data/sqlite/createId';
 import { getDatabase } from '@/data/sqlite/database';
 import type {
+  CompletedExerciseSetRecord,
   CompletedSessionInRange,
   CompletedSetRecord,
   WorkoutSessionRepository,
@@ -17,6 +18,20 @@ import {
 } from '@/domain/models/strengthSession';
 
 const DEFAULT_SET_COUNT = 3;
+
+type ExerciseSetRow = {
+  session_id: string;
+  session_name: string;
+  started_at: string;
+  completed_at: string | null;
+  exercise_id: string;
+  exercise_name_snapshot: string;
+  logging_type: string | null;
+  weight: number | null;
+  reps: number | null;
+  duration_seconds: number | null;
+  sort_order: number;
+};
 
 type CompletedRangeRow = {
   id: string;
@@ -448,6 +463,61 @@ export const sqliteWorkoutSessionRepository: WorkoutSessionRepository = {
        LIMIT ?`,
       safeLimit,
     );
+  },
+
+  async listCompletedExerciseSets(input) {
+    const db = await getDatabase();
+    const rows = await db.getAllAsync<ExerciseSetRow>(
+      `SELECT
+         s.id AS session_id,
+         s.name AS session_name,
+         s.started_at,
+         s.completed_at,
+         e.exercise_id,
+         e.exercise_name_snapshot,
+         ex.logging_type,
+         w.weight,
+         w.reps,
+         w.duration_seconds,
+         w.sort_order
+       FROM workout_sets w
+       INNER JOIN workout_session_exercises e ON e.id = w.workout_session_exercise_id
+       INNER JOIN workout_sessions s ON s.id = e.workout_session_id
+       LEFT JOIN exercises ex ON ex.id = e.exercise_id
+       WHERE s.status = 'completed'
+         AND s.completed_at IS NOT NULL
+         AND w.is_completed = 1
+         AND (? IS NULL OR s.completed_at >= ?)
+         AND (? IS NULL OR s.completed_at < ?)
+         AND (? IS NULL OR e.exercise_id = ?)
+       ORDER BY s.completed_at ASC, s.id ASC, e.sort_order ASC, w.sort_order ASC`,
+      input.startInclusive,
+      input.startInclusive,
+      input.endExclusive,
+      input.endExclusive,
+      input.exerciseId ?? null,
+      input.exerciseId ?? null,
+    );
+    return rows.flatMap((row) => {
+      if (!row.completed_at) {
+        return [];
+      }
+      return [
+        {
+          sessionId: row.session_id,
+          sessionName: row.session_name,
+          startedAt: row.started_at,
+          completedAt: row.completed_at,
+          exerciseId: row.exercise_id,
+          exerciseName: row.exercise_name_snapshot,
+          loggingType: row.logging_type ?? 'weight_reps',
+          weight: row.weight,
+          reps: row.reps,
+          durationSeconds: row.duration_seconds,
+          sortOrder: row.sort_order,
+        } satisfies CompletedExerciseSetRecord,
+      ];
+    });
   },
 };
 
