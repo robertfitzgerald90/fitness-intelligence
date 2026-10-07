@@ -1,21 +1,20 @@
 import {
   dayAccessibilityLabel,
-  formatCompletedClock,
-  formatCompletedSetCount,
+  formatMonthBanner,
   formatMonthTitle,
+  formatRecentMeta,
   formatSelectedDate,
-  formatStrengthMeta,
-  formatTrainedDuration,
-  formatWorkoutCount,
+  type MonthStatBanner,
 } from '@/application/calendar/format';
+import {
+  summarizeStrength,
+  toStrengthActivity,
+  toWorkoutItem,
+  type StrengthWorkoutItem,
+} from '@/application/calendar/strengthActivity';
 import { trainContainer } from '@/application/train/container';
 import type { CompletedSessionInRange } from '@/data/repositories/workoutSessionRepository';
-import { elapsedMinutes } from '@/domain/analytics/elapsed';
-import {
-  indicatorsFor,
-  type CalendarActivity,
-  type StrengthCalendarActivity,
-} from '@/domain/calendar/activity';
+import { indicatorsFor, type CalendarActivity, type StrengthCalendarActivity } from '@/domain/calendar/activity';
 import {
   addLocalDays,
   buildMonthWeeks,
@@ -39,27 +38,28 @@ export type CalendarDayView = {
   };
 };
 
-export type CalendarWorkoutItem = {
+export type CalendarWorkoutItem = StrengthWorkoutItem;
+
+export type CalendarRecentItem = {
   id: string;
   kind: 'strength';
   name: string;
   meta: string;
-  completedLabel: string;
 };
+
+export type CalendarLowerSection =
+  | { mode: 'workouts'; title: string; workouts: CalendarWorkoutItem[] }
+  | { mode: 'recent'; items: CalendarRecentItem[] }
+  | { mode: 'empty'; title: string };
 
 export type CalendarMonthView = {
   year: number;
   monthIndex: number;
   monthTitle: string;
   selectedDateKey: string;
-  summary: {
-    workouts: string;
-    sets: string;
-    duration: string;
-  };
+  summary: MonthStatBanner;
   weeks: CalendarDayView[][];
-  selectedTitle: string;
-  workouts: CalendarWorkoutItem[];
+  lower: CalendarLowerSection;
 };
 
 export async function getCalendarMonth(input: {
@@ -81,14 +81,18 @@ export async function getCalendarMonth(input: {
   const byDate = groupByLocalDate(sessions);
   const monthActivities = sessionsInMonth(byDate, input.year, input.monthIndex);
   const selectedKey = localDateKey(input.selected);
-  const selectedActivities = byDate.get(selectedKey) ?? [];
+  const selectedActivities = (byDate.get(selectedKey) ?? []).filter(
+    (activity): activity is StrengthCalendarActivity => activity.kind === 'strength',
+  );
+  const recent =
+    selectedActivities.length === 0 ? await trainContainer.sessions.getRecentCompletedSessions(3) : [];
 
   return {
     year: input.year,
     monthIndex: input.monthIndex,
     monthTitle: formatMonthTitle(input.year, input.monthIndex),
     selectedDateKey: selectedKey,
-    summary: summarize(monthActivities),
+    summary: formatMonthBanner(summarizeStrength(monthActivities)),
     weeks: weeks.map((week) =>
       week.map((date) => {
         const activities = byDate.get(localDateKey(date)) ?? [];
@@ -108,10 +112,7 @@ export async function getCalendarMonth(input: {
         };
       }),
     ),
-    selectedTitle: formatSelectedDate(input.selected),
-    workouts: selectedActivities.flatMap((activity) =>
-      activity.kind === 'strength' ? [toWorkoutItem(activity)] : [],
-    ),
+    lower: lowerSection(input.selected, input.today, selectedActivities, recent),
   };
 }
 
@@ -123,8 +124,9 @@ function groupByLocalDate(sessions: CompletedSessionInRange[]): Map<string, Cale
       continue;
     }
     const key = localDateKey(local);
+    const activity = toStrengthActivity(session);
     const list = byDate.get(key) ?? [];
-    list.push(toStrengthActivity(session));
+    list.push(activity);
     byDate.set(key, list);
   }
   return byDate;
@@ -148,35 +150,32 @@ function sessionsInMonth(
   return activities;
 }
 
-function summarize(activities: StrengthCalendarActivity[]): CalendarMonthView['summary'] {
-  const completedSetCount = activities.reduce((count, activity) => count + activity.completedSetCount, 0);
-  const durationMinutes = activities.reduce((count, activity) => count + activity.durationMinutes, 0);
-  return {
-    workouts: formatWorkoutCount(activities.length),
-    sets: formatCompletedSetCount(completedSetCount),
-    duration: formatTrainedDuration(durationMinutes),
-  };
+function lowerSection(
+  selected: LocalDate,
+  today: LocalDate,
+  selectedActivities: StrengthCalendarActivity[],
+  recent: CompletedSessionInRange[],
+): CalendarLowerSection {
+  const title = formatSelectedDate(selected);
+  if (selectedActivities.length > 0) {
+    return {
+      mode: 'workouts',
+      title,
+      workouts: selectedActivities.map(toWorkoutItem),
+    };
+  }
+  const items = recent.map((session) => {
+    const activity = toStrengthActivity(session);
+    return {
+      id: activity.id,
+      kind: 'strength' as const,
+      name: activity.name,
+      meta: formatRecentMeta(activity, today),
+    };
+  });
+  if (items.length === 0) {
+    return { mode: 'empty', title };
+  }
+  return { mode: 'recent', items };
 }
 
-function toStrengthActivity(session: CompletedSessionInRange): StrengthCalendarActivity {
-  return {
-    id: session.id,
-    kind: 'strength',
-    name: session.name,
-    startedAt: session.startedAt,
-    completedAt: session.completedAt,
-    durationMinutes: elapsedMinutes(session.startedAt, session.completedAt),
-    exerciseCount: session.exerciseCount,
-    completedSetCount: session.completedSetCount,
-  };
-}
-
-function toWorkoutItem(activity: StrengthCalendarActivity): CalendarWorkoutItem {
-  return {
-    id: activity.id,
-    kind: 'strength',
-    name: activity.name,
-    meta: formatStrengthMeta(activity),
-    completedLabel: formatCompletedClock(activity.completedAt),
-  };
-}

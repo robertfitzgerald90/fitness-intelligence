@@ -423,8 +423,46 @@ export const sqliteWorkoutSessionRepository: WorkoutSessionRepository = {
 
   async getCompletedSessionsInRange(startInclusive, endExclusive) {
     const db = await getDatabase();
-    const rows = await db.getAllAsync<CompletedRangeRow>(
-      `SELECT
+    return queryCompletedSessions(
+      db,
+      `${COMPLETED_SESSION_SELECT}
+       WHERE s.status = 'completed'
+         AND s.completed_at IS NOT NULL
+         AND s.completed_at >= ?
+         AND s.completed_at < ?
+       ORDER BY s.completed_at ASC, s.id ASC`,
+      startInclusive,
+      endExclusive,
+    );
+  },
+
+  async getRecentCompletedSessions(limit) {
+    const db = await getDatabase();
+    const safeLimit = Math.max(0, Math.floor(limit));
+    return queryCompletedSessions(
+      db,
+      `${COMPLETED_SESSION_SELECT}
+       WHERE s.status = 'completed'
+         AND s.completed_at IS NOT NULL
+       ORDER BY s.completed_at DESC, s.id DESC
+       LIMIT ?`,
+      safeLimit,
+    );
+  },
+};
+
+class ActiveSessionExistsError extends Error {
+  constructor() {
+    super('An active workout already exists.');
+    this.name = 'ActiveSessionExistsError';
+  }
+}
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+const COMPLETED_SESSION_SELECT = `SELECT
          s.id,
          s.name,
          s.started_at,
@@ -447,42 +485,29 @@ export const sqliteWorkoutSessionRepository: WorkoutSessionRepository = {
            WHERE e.workout_session_id = s.id
              AND w.is_completed = 1
          ) AS completed_set_count
-       FROM workout_sessions s
-       WHERE s.status = 'completed'
-         AND s.completed_at IS NOT NULL
-         AND s.completed_at >= ?
-         AND s.completed_at < ?
-       ORDER BY s.completed_at ASC, s.id ASC`,
-      startInclusive,
-      endExclusive,
-    );
-    return rows.flatMap((row) => {
-      if (!row.completed_at) {
-        return [];
-      }
-      return [
-        {
-          id: row.id,
-          name: row.name,
-          startedAt: row.started_at,
-          completedAt: row.completed_at,
-          exerciseCount: Number(row.exercise_count),
-          completedSetCount: Number(row.completed_set_count),
-        } satisfies CompletedSessionInRange,
-      ];
-    });
-  },
-};
+       FROM workout_sessions s`;
 
-class ActiveSessionExistsError extends Error {
-  constructor() {
-    super('An active workout already exists.');
-    this.name = 'ActiveSessionExistsError';
-  }
-}
-
-function nowIso(): string {
-  return new Date().toISOString();
+async function queryCompletedSessions(
+  db: SQLite.SQLiteDatabase,
+  sql: string,
+  ...params: (string | number)[]
+): Promise<CompletedSessionInRange[]> {
+  const rows = await db.getAllAsync<CompletedRangeRow>(sql, ...params);
+  return rows.flatMap((row) => {
+    if (!row.completed_at) {
+      return [];
+    }
+    return [
+      {
+        id: row.id,
+        name: row.name,
+        startedAt: row.started_at,
+        completedAt: row.completed_at,
+        exerciseCount: Number(row.exercise_count),
+        completedSetCount: Number(row.completed_set_count),
+      } satisfies CompletedSessionInRange,
+    ];
+  });
 }
 
 function isUniqueConstraint(error: unknown): boolean {

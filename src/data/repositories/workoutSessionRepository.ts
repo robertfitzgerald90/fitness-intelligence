@@ -57,4 +57,5 @@ export type WorkoutSessionRepository = {
     beforeCompletedAt: string | null,
   ): Promise<CompletedSetRecord[]>;
   getCompletedSessionsInRange(startInclusive: string, endExclusive: string): Promise<CompletedSessionInRange[]>;
+  getRecentCompletedSessions(limit: number): Promise<CompletedSessionInRange[]>;
 };

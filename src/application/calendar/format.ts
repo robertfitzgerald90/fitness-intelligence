@@ -1,6 +1,6 @@
 import { formatDuration } from '@/application/workout/format';
 import type { CalendarActivity, StrengthCalendarActivity } from '@/domain/calendar/activity';
-import type { LocalDate } from '@/domain/calendar/dates';
+import { addLocalDays, localDateFromIso, sameLocalDate, type LocalDate } from '@/domain/calendar/dates';
 
 export function formatMonthTitle(year: number, monthIndex: number): string {
   return new Date(year, monthIndex, 1).toLocaleDateString(undefined, {
@@ -16,27 +16,80 @@ export function formatSelectedDate(date: LocalDate): string {
   });
 }
 
-export function formatWorkoutCount(count: number): string {
-  return `${count} ${count === 1 ? 'workout' : 'workouts'}`;
+export function formatMonthName(year: number, monthIndex: number): string {
+  return new Date(year, monthIndex, 1).toLocaleDateString(undefined, { month: 'long' });
 }
 
-export function formatCompletedSetCount(count: number): string {
-  return `${count} ${count === 1 ? 'completed set' : 'completed sets'}`;
+export function formatViewMonthActivity(year: number, monthIndex: number): string {
+  return `View ${formatMonthName(year, monthIndex)} Activity →`;
+}
+
+export function formatActivityDay(date: LocalDate): string {
+  return new Date(date.year, date.monthIndex, date.day).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+export function formatRecentDay(completedAt: string, today: LocalDate): string {
+  const local = localDateFromIso(completedAt);
+  if (!local) {
+    return 'Completed';
+  }
+  if (sameLocalDate(local, today)) {
+    return 'Today';
+  }
+  if (sameLocalDate(local, addLocalDays(today, -1))) {
+    return 'Yesterday';
+  }
+  const day = formatActivityDay(local);
+  if (local.year === today.year) {
+    return day;
+  }
+  return `${day}, ${local.year}`;
+}
+
+export type MonthStatBanner = {
+  workouts: string;
+  sets: string;
+  duration: string;
+};
+
+export function formatMonthBanner(input: {
+  workoutCount: number;
+  completedSetCount: number;
+  durationMinutes: number;
+}): MonthStatBanner {
+  return {
+    workouts: countPhrase(input.workoutCount, 'workout'),
+    sets: countPhrase(input.completedSetCount, 'set'),
+    duration: formatTrainedDuration(input.durationMinutes),
+  };
+}
+
+export function formatMonthActivityLine(input: {
+  workoutCount: number;
+  completedSetCount: number;
+  durationMinutes: number;
+}): string {
+  const banner = formatMonthBanner(input);
+  return `${banner.workouts} · ${banner.sets} · ${banner.duration}`;
 }
 
 export function formatTrainedDuration(totalMinutes: number): string {
+  return `${formatCompactDuration(totalMinutes)} trained`;
+}
+
+export function formatCompactDuration(totalMinutes: number): string {
   if (totalMinutes <= 0) {
-    return '0m trained';
+    return '0m';
   }
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   if (hours === 0) {
-    return `${minutes}m trained`;
+    return `${minutes}m`;
   }
-  if (minutes === 0) {
-    return `${hours}h trained`;
-  }
-  return `${hours}h ${minutes}m trained`;
+  return `${hours}h ${minutes.toString().padStart(2, '0')}m`;
 }
 
 export function formatCompletedClock(iso: string): string {
@@ -46,6 +99,13 @@ export function formatCompletedClock(iso: string): string {
   }
   const time = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   return `Completed ${time}`;
+}
+
+export function formatRecentMeta(activity: StrengthCalendarActivity, today: LocalDate): string {
+  const when = formatRecentDay(activity.completedAt, today);
+  const duration = formatDuration(activity.startedAt, activity.completedAt);
+  const sets = countPhrase(activity.completedSetCount, 'set');
+  return `${when} · ${duration} · ${sets}`;
 }
 
 export function formatStrengthMeta(activity: StrengthCalendarActivity): string {

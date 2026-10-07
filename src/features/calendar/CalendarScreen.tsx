@@ -3,11 +3,13 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { dayAccessibilityLabel, formatMonthTitle } from '@/application/calendar/format';
+import { dayAccessibilityLabel, formatMonthTitle, formatViewMonthActivity } from '@/application/calendar/format';
 import {
   getCalendarMonth,
   type CalendarDayView,
   type CalendarMonthView,
+  type CalendarRecentItem,
+  type CalendarWorkoutItem,
 } from '@/application/calendar/getCalendarMonth';
 import { AppText } from '@/components/AppText';
 import { Screen } from '@/components/Screen';
@@ -141,19 +143,6 @@ export function CalendarScreen() {
           </AppText>
         ) : null}
 
-        <View style={styles.summary}>
-          <SectionLabel>This month</SectionLabel>
-          <AppText role="body" color="textSecondary">
-            {showing?.summary.workouts ?? ' '}
-          </AppText>
-          <AppText role="body" color="textSecondary">
-            {showing?.summary.sets ?? ' '}
-          </AppText>
-          <AppText role="body" color="textSecondary">
-            {showing?.summary.duration ?? ' '}
-          </AppText>
-        </View>
-
         <View style={styles.grid}>
           <View style={styles.weekRow}>
             {WEEKDAYS.map((label) => (
@@ -174,34 +163,86 @@ export function CalendarScreen() {
         </View>
 
         {showing ? (
-          <View style={styles.daySection}>
-            <SectionLabel>{showing.selectedTitle}</SectionLabel>
-            {showing.workouts.length === 0 ? (
-              <AppText role="body" color="textSecondary">
-                No workouts recorded.
-              </AppText>
-            ) : (
-              showing.workouts.map((workout) => (
-                <View key={workout.id} style={styles.workout}>
-                  <AppText role="bodyStrong">{workout.name}</AppText>
-                  <AppText role="small" color="textSecondary">
-                    {workout.meta}
-                  </AppText>
-                  <AppText role="small" color="textMuted">
-                    {workout.completedLabel}
-                  </AppText>
-                  <TextAction
-                    label="View Workout"
-                    onPress={() => router.push({ pathname: '/workout/[id]', params: { id: workout.id } })}
-                  />
-                </View>
-              ))
-            )}
-          </View>
+          <AppText role="small" color="textSecondary" style={styles.banner}>
+            {`${showing.summary.workouts}  |  ${showing.summary.sets}  |  ${showing.summary.duration}`}
+          </AppText>
         ) : null}
+
+        {showing ? <LowerSection lower={showing.lower} /> : null}
+
+        <TextAction
+          label={formatViewMonthActivity(visible.year, visible.monthIndex)}
+          onPress={() =>
+            router.push({
+              pathname: '/calendar/[year]/[month]',
+              params: { year: String(visible.year), month: String(visible.monthIndex + 1) },
+            })
+          }
+        />
       </ScrollView>
     </Screen>
   );
+}
+
+function LowerSection({ lower }: { lower: CalendarMonthView['lower'] }) {
+  if (lower.mode === 'recent') {
+    return (
+      <View style={styles.daySection}>
+        <SectionLabel>Recent training</SectionLabel>
+        {lower.items.map((item) => (
+          <RecentRow key={item.id} item={item} />
+        ))}
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.daySection}>
+      <SectionLabel>{lower.title}</SectionLabel>
+      {lower.mode === 'empty' ? (
+        <AppText role="body" color="textSecondary">
+          No workouts recorded.
+        </AppText>
+      ) : (
+        lower.workouts.map((workout) => <WorkoutBlock key={workout.id} workout={workout} />)
+      )}
+    </View>
+  );
+}
+
+function WorkoutBlock({ workout }: { workout: CalendarWorkoutItem }) {
+  return (
+    <View style={styles.workout}>
+      <AppText role="bodyStrong">{workout.name}</AppText>
+      <AppText role="small" color="textSecondary">
+        {workout.meta}
+      </AppText>
+      <AppText role="small" color="textMuted">
+        {workout.completedLabel}
+      </AppText>
+      <TextAction label="View Workout →" onPress={() => openWorkout(workout.id)} />
+    </View>
+  );
+}
+
+function RecentRow({ item }: { item: CalendarRecentItem }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${item.name}. ${item.meta}`}
+      onPress={() => openWorkout(item.id)}
+      style={({ pressed }) => [styles.recentRow, pressed && styles.pressed]}
+    >
+      <AppText role="bodyStrong">{item.name}</AppText>
+      <AppText role="small" color="textSecondary">
+        {item.meta}
+      </AppText>
+    </Pressable>
+  );
+}
+
+function openWorkout(id: string) {
+  router.push({ pathname: '/workout/[id]', params: { id } });
 }
 
 function pendingWeeks(
@@ -285,8 +326,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  summary: {
-    gap: spacing[1],
+  banner: {
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   grid: {
     gap: spacing[1],
@@ -355,5 +397,11 @@ const styles = StyleSheet.create({
   },
   workout: {
     gap: spacing[1],
+  },
+  recentRow: {
+    minHeight: 44,
+    justifyContent: 'center',
+    gap: spacing[1],
+    paddingVertical: spacing[1],
   },
 });

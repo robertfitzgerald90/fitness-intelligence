@@ -65,6 +65,29 @@ export function dateInMonth(year: number, monthIndex: number, day: number): Loca
   return { year, monthIndex, day: Math.min(Math.max(day, 1), lastDay) };
 }
 
+export function monthRange(year: number, monthIndex: number): { start: LocalDate; endExclusive: LocalDate } {
+  const next = shiftMonth(year, monthIndex, 1);
+  return {
+    start: { year, monthIndex, day: 1 },
+    endExclusive: { year: next.year, monthIndex: next.monthIndex, day: 1 },
+  };
+}
+
+export function parseMonthRoute(
+  yearText: string,
+  monthText: string,
+): { year: number; monthIndex: number } | null {
+  if (!/^\d{4}$/.test(yearText) || !/^\d{1,2}$/.test(monthText)) {
+    return null;
+  }
+  const year = Number(yearText);
+  const month = Number(monthText);
+  if (month < 1 || month > 12) {
+    return null;
+  }
+  return { year, monthIndex: month - 1 };
+}
+
 export function localDayStartIso(date: LocalDate): string {
   return new Date(date.year, date.monthIndex, date.day, 0, 0, 0, 0).toISOString();
 }

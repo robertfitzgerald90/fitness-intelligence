@@ -2,9 +2,14 @@ export const calendarActivityKinds = ['strength', 'run'] as const;
 
 export type CalendarActivityKind = (typeof calendarActivityKinds)[number];
 
+export const calendarActivityStatuses = ['completed', 'planned'] as const;
+
+export type CalendarActivityStatus = (typeof calendarActivityStatuses)[number];
+
 type CalendarActivityBase = {
   id: string;
   name: string;
+  status: 'completed';
   completedAt: string;
   durationMinutes: number;
 };
