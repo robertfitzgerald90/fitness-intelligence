@@ -3,6 +3,7 @@ import type * as SQLite from 'expo-sqlite';
 import { createId } from '@/data/sqlite/createId';
 import { getDatabase } from '@/data/sqlite/database';
 import type {
+  CompletedSessionInRange,
   CompletedSetRecord,
   WorkoutSessionRepository,
 } from '@/data/repositories/workoutSessionRepository';
@@ -16,6 +17,15 @@ import {
 } from '@/domain/models/strengthSession';
 
 const DEFAULT_SET_COUNT = 3;
+
+type CompletedRangeRow = {
+  id: string;
+  name: string;
+  started_at: string;
+  completed_at: string | null;
+  exercise_count: number;
+  completed_set_count: number;
+};
 
 type SessionRow = {
   id: string;
@@ -409,6 +419,58 @@ export const sqliteWorkoutSessionRepository: WorkoutSessionRepository = {
   async latestCompletedSets(exerciseId, excludeSessionId, beforeCompletedAt) {
     const db = await getDatabase();
     return loadLatestCompletedSets(db, exerciseId, excludeSessionId, beforeCompletedAt);
+  },
+
+  async getCompletedSessionsInRange(startInclusive, endExclusive) {
+    const db = await getDatabase();
+    const rows = await db.getAllAsync<CompletedRangeRow>(
+      `SELECT
+         s.id,
+         s.name,
+         s.started_at,
+         s.completed_at,
+         (
+           SELECT COUNT(*)
+           FROM workout_session_exercises e
+           WHERE e.workout_session_id = s.id
+             AND EXISTS (
+               SELECT 1
+               FROM workout_sets w
+               WHERE w.workout_session_exercise_id = e.id
+                 AND w.is_completed = 1
+             )
+         ) AS exercise_count,
+         (
+           SELECT COUNT(*)
+           FROM workout_sets w
+           INNER JOIN workout_session_exercises e ON e.id = w.workout_session_exercise_id
+           WHERE e.workout_session_id = s.id
+             AND w.is_completed = 1
+         ) AS completed_set_count
+       FROM workout_sessions s
+       WHERE s.status = 'completed'
+         AND s.completed_at IS NOT NULL
+         AND s.completed_at >= ?
+         AND s.completed_at < ?
+       ORDER BY s.completed_at ASC, s.id ASC`,
+      startInclusive,
+      endExclusive,
+    );
+    return rows.flatMap((row) => {
+      if (!row.completed_at) {
+        return [];
+      }
+      return [
+        {
+          id: row.id,
+          name: row.name,
+          startedAt: row.started_at,
+          completedAt: row.completed_at,
+          exerciseCount: Number(row.exercise_count),
+          completedSetCount: Number(row.completed_set_count),
+        } satisfies CompletedSessionInRange,
+      ];
+    });
   },
 };
 

@@ -19,6 +19,15 @@ export type UpdateStrengthSetInput = {
   isCompleted: boolean;
 };
 
+export type CompletedSessionInRange = {
+  id: string;
+  name: string;
+  startedAt: string;
+  completedAt: string;
+  exerciseCount: number;
+  completedSetCount: number;
+};
+
 export type CompletedSetRecord = {
   weight: number | null;
   reps: number | null;
@@ -47,4 +56,5 @@ export type WorkoutSessionRepository = {
     excludeSessionId: string | null,
     beforeCompletedAt: string | null,
   ): Promise<CompletedSetRecord[]>;
+  getCompletedSessionsInRange(startInclusive: string, endExclusive: string): Promise<CompletedSessionInRange[]>;
 };

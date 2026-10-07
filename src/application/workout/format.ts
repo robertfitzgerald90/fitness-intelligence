@@ -1,3 +1,4 @@
+import { elapsedMinutes } from '@/domain/analytics/elapsed';
 import { compareWorkingWeight, type ExercisePerformance, type WeightComparison } from '@/domain/analytics/workingWeight';
 import type { ExerciseLoggingType } from '@/domain/models/exercise';
 import type { StrengthSet } from '@/domain/models/strengthSession';
@@ -47,12 +48,7 @@ export function formatStartedAgo(startedAt: string, now: Date): string {
 }
 
 export function formatDuration(startedAt: string, completedAt: string): string {
-  const started = Date.parse(startedAt);
-  const completed = Date.parse(completedAt);
-  if (Number.isNaN(started) || Number.isNaN(completed)) {
-    return 'Less than a minute';
-  }
-  const minutes = Math.round(Math.max(0, completed - started) / 60000);
+  const minutes = elapsedMinutes(startedAt, completedAt);
   if (minutes < 1) {
     return 'Less than a minute';
   }
