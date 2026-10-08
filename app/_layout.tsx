@@ -31,6 +31,14 @@ export default function RootLayout() {
         <Stack.Screen name="progress/exercise/[id]" options={{ title: 'Progress' }} />
         <Stack.Screen name="goals/index" options={{ title: 'Goals' }} />
         <Stack.Screen name="calendar/[year]/[month]" options={{ title: 'Activity' }} />
+        <Stack.Screen name="you/body" options={{ title: 'Body' }} />
+        <Stack.Screen name="you/body/entry" options={{ title: 'Weight' }} />
+        <Stack.Screen name="you/vitals" options={{ title: 'Vitals' }} />
+        <Stack.Screen name="you/vitals/entry" options={{ title: 'Blood pressure' }} />
+        <Stack.Screen name="you/goals" options={{ title: 'Goals' }} />
+        <Stack.Screen name="you/goals/edit" options={{ title: 'Goal' }} />
+        <Stack.Screen name="you/profile" options={{ title: 'Fitness Profile' }} />
+        <Stack.Screen name="you/settings" options={{ title: 'Settings & data' }} />
       </Stack>
     </ThemeProvider>
   );

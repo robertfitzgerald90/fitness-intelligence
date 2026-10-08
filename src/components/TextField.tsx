@@ -1,4 +1,4 @@
-import { StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, TextInput, View, type KeyboardTypeOptions } from 'react-native';
 
 import { AppText } from '@/components/AppText';
 import { colors, radius, spacing } from '@/design/tokens';
@@ -9,9 +9,19 @@ type Props = {
   onChangeText: (value: string) => void;
   onEndEditing?: () => void;
   placeholder?: string;
+  keyboardType?: KeyboardTypeOptions;
+  autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
 };
 
-export function TextField({ label, value, onChangeText, onEndEditing, placeholder }: Props) {
+export function TextField({
+  label,
+  value,
+  onChangeText,
+  onEndEditing,
+  placeholder,
+  keyboardType = 'default',
+  autoCapitalize = 'words',
+}: Props) {
   return (
     <View style={styles.field}>
       <AppText role="caption" color="textMuted">
@@ -24,7 +34,8 @@ export function TextField({ label, value, onChangeText, onEndEditing, placeholde
         placeholder={placeholder}
         placeholderTextColor={colors.textMuted}
         accessibilityLabel={label}
-        autoCapitalize="words"
+        keyboardType={keyboardType}
+        autoCapitalize={autoCapitalize}
         autoCorrect={false}
         style={styles.input}
       />

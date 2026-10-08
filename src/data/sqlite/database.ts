@@ -3,7 +3,7 @@ import * as SQLite from 'expo-sqlite';
 import { builtinExercises } from '@/data/seed/exerciseCatalog';
 import { starterTemplates } from '@/data/seed/starterTemplates';
 
-const DATABASE_VERSION = 3;
+const DATABASE_VERSION = 4;
 const SEEDED_AT = '2026-01-01T00:00:00.000Z';
 
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -133,6 +133,53 @@ async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
       await db.runAsync('UPDATE exercises SET logging_type = ? WHERE id = ?', exercise.loggingType, exercise.id);
     }
     await db.execAsync('PRAGMA user_version = 3');
+    currentVersion = 3;
+  }
+
+  if (currentVersion < 4) {
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS body_measurements (
+        id TEXT PRIMARY KEY NOT NULL,
+        weight REAL NOT NULL,
+        weight_unit TEXT NOT NULL,
+        body_fat_percent REAL,
+        recorded_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_body_measurements_recorded
+        ON body_measurements (recorded_at);
+      CREATE TABLE IF NOT EXISTS blood_pressure_readings (
+        id TEXT PRIMARY KEY NOT NULL,
+        systolic INTEGER NOT NULL,
+        diastolic INTEGER NOT NULL,
+        pulse INTEGER,
+        recorded_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_blood_pressure_recorded
+        ON blood_pressure_readings (recorded_at);
+      CREATE TABLE IF NOT EXISTS goals (
+        id TEXT PRIMARY KEY NOT NULL,
+        type TEXT NOT NULL,
+        target_weight REAL,
+        weight_unit TEXT,
+        exercise_id TEXT,
+        exercise_name_snapshot TEXT,
+        logging_type TEXT,
+        target_reps INTEGER,
+        target_duration_seconds INTEGER,
+        workouts_per_week INTEGER,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE SET NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_goals_type ON goals (type);
+      CREATE INDEX IF NOT EXISTS idx_goals_exercise ON goals (exercise_id);
+    `);
+    await db.execAsync('PRAGMA user_version = 4');
+    currentVersion = 4;
   }
 }
 
