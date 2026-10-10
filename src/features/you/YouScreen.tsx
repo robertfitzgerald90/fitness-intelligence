@@ -53,6 +53,42 @@ export function YouScreen() {
 
         {home ? (
           <>
+            <View style={styles.section}>
+              <SectionLabel>My profile</SectionLabel>
+              {home.personal.name ? <AppText role="title3">{home.personal.name}</AppText> : null}
+              {home.personal.context ? (
+                <AppText role="body" color="textSecondary">
+                  {home.personal.context}
+                </AppText>
+              ) : null}
+              {!home.personal.name && !home.personal.context ? (
+                <AppText role="body" color="textSecondary">
+                  Add your name and how you like to train.
+                </AppText>
+              ) : null}
+              <Pressable accessibilityRole="button" onPress={() => router.push('/you/personal')} style={styles.link}>
+                <AppText role="bodyStrong" color="primary">
+                  Edit Profile →
+                </AppText>
+              </Pressable>
+            </View>
+            {home.suggestions.length > 0 ? (
+              <View style={styles.section}>
+                <SectionLabel>Complete your profile</SectionLabel>
+                {home.suggestions.map((suggestion) => (
+                  <Pressable
+                    key={suggestion.id}
+                    accessibilityRole="button"
+                    onPress={() => router.push(suggestion.route)}
+                    style={styles.link}
+                  >
+                    <AppText role="body" color="textSecondary">
+                      {suggestion.label} →
+                    </AppText>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
             <SnapshotSection
               label="Body"
               snapshot={home.body}

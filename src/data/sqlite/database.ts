@@ -3,7 +3,7 @@ import * as SQLite from 'expo-sqlite';
 import { builtinExercises } from '@/data/seed/exerciseCatalog';
 import { starterTemplates } from '@/data/seed/starterTemplates';
 
-const DATABASE_VERSION = 4;
+const DATABASE_VERSION = 5;
 const SEEDED_AT = '2026-01-01T00:00:00.000Z';
 
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -180,6 +180,47 @@ async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
     `);
     await db.execAsync('PRAGMA user_version = 4');
     currentVersion = 4;
+  }
+
+  if (currentVersion < 5) {
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS user_profiles (
+        id TEXT PRIMARY KEY NOT NULL,
+        display_name TEXT,
+        date_of_birth TEXT,
+        sex_at_birth TEXT,
+        height_cm REAL,
+        preferred_weight_unit TEXT NOT NULL,
+        preferred_distance_unit TEXT NOT NULL,
+        experience_level TEXT,
+        primary_objective TEXT,
+        training_location TEXT,
+        preferred_workouts_per_week INTEGER,
+        preferred_workout_minutes INTEGER,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS user_preferred_activities (
+        profile_id TEXT NOT NULL,
+        activity TEXT NOT NULL,
+        PRIMARY KEY (profile_id, activity),
+        FOREIGN KEY (profile_id) REFERENCES user_profiles(id) ON DELETE CASCADE
+      );
+    `);
+    const timestamp = new Date().toISOString();
+    await db.runAsync(
+      `INSERT INTO user_profiles (
+         id, display_name, date_of_birth, sex_at_birth, height_cm, preferred_weight_unit,
+         preferred_distance_unit, experience_level, primary_objective, training_location,
+         preferred_workouts_per_week, preferred_workout_minutes, created_at, updated_at
+       )
+       SELECT 'local-user', NULL, NULL, NULL, NULL, 'lb', 'mi', NULL, NULL, NULL, NULL, NULL, ?, ?
+       WHERE NOT EXISTS (SELECT 1 FROM user_profiles WHERE id = 'local-user')`,
+      timestamp,
+      timestamp,
+    );
+    await db.execAsync('PRAGMA user_version = 5');
+    currentVersion = 5;
   }
 }
 

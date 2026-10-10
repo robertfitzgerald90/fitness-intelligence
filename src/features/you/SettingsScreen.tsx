@@ -19,7 +19,7 @@ export function SettingsScreen() {
         <View style={styles.block}>
           <SectionLabel>Data & privacy</SectionLabel>
           <AppText role="body" color="textSecondary">
-            Workouts, measurements, and goals stay on this device.
+            Your profile, workouts, measurements, and goals stay on this device.
           </AppText>
         </View>
         <View style={styles.block}>

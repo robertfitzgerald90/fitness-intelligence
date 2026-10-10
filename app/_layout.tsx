@@ -38,6 +38,8 @@ export default function RootLayout() {
         <Stack.Screen name="you/goals" options={{ title: 'Goals' }} />
         <Stack.Screen name="you/goals/edit" options={{ title: 'Goal' }} />
         <Stack.Screen name="you/profile" options={{ title: 'Fitness Profile' }} />
+        <Stack.Screen name="you/personal" options={{ title: 'Personal Profile' }} />
+        <Stack.Screen name="you/preferences" options={{ title: 'Training Preferences' }} />
         <Stack.Screen name="you/settings" options={{ title: 'Settings & data' }} />
       </Stack>
     </ThemeProvider>

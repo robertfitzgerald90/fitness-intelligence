@@ -1,10 +1,10 @@
 import type { Goal } from '@/domain/models/goal';
-import type { UserProfile } from '@/domain/models/profile';
+import type { TodayGreetingProfile } from '@/domain/models/profile';
 import type { ExerciseHistory } from '@/domain/models/progress';
 import type { WorkoutSession } from '@/domain/models/workout';
 
 export interface ProfileRepository {
-  getProfile(): Promise<UserProfile>;
+  getProfile(): Promise<TodayGreetingProfile>;
 }
 
 export interface WorkoutRepository {

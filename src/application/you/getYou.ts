@@ -1,6 +1,14 @@
 import { listExercises } from '@/application/train/useCases';
 import { youContainer } from '@/application/you/container';
 import {
+  personalSnapshot,
+  preferenceLines,
+  profileSuggestions,
+  type PersonalSnapshot,
+  type PreferenceLine,
+  type ProfileSuggestion,
+} from '@/application/you/profile';
+import {
   DEFAULT_WEIGHT_UNIT,
   formatBloodPressure,
   formatBodyFat,
@@ -33,9 +41,11 @@ import {
   weekDateKeys,
   weightDelta,
 } from '@/domain/analytics/personalContext';
+import { elapsedMinutes } from '@/domain/analytics/elapsed';
 import {
   averageWorkoutsPerWeek,
   buildSessionPoints,
+  inclusiveSpanDays,
   mondayWeek,
   periodWindow,
   primaryMetric,
@@ -58,6 +68,8 @@ export type YouSnapshot = {
 };
 
 export type YouHome = {
+  personal: PersonalSnapshot;
+  suggestions: ProfileSuggestion[];
   body: YouSnapshot | null;
   vitals: YouSnapshot | null;
   goals: string[];
@@ -101,6 +113,10 @@ export type FitnessProfileView = {
   mostTrained: string | null;
   recent: string | null;
   exercises: string[];
+  averageWorkouts: string | null;
+  averageDuration: string | null;
+  preferences: PreferenceLine[];
+  suggestions: ProfileSuggestion[];
 };
 
 export type GoalDraft =
@@ -127,13 +143,16 @@ export type GoalDraft =
 const RECENT_DAYS = 30;
 
 export async function getYouHome(today: LocalDate): Promise<YouHome> {
-  const [body, vitals, goals, profile] = await Promise.all([
+  const [body, vitals, goals, profile, user] = await Promise.all([
     getBody(today),
     getVitals(today),
     getGoals(today),
     getFitnessProfile(today),
+    youContainer.profile.get(),
   ]);
   return {
+    personal: personalSnapshot(user),
+    suggestions: profileSuggestions(user),
     body: body.current
       ? {
           value: body.current,
@@ -422,7 +441,7 @@ export async function deleteGoal(id: string): Promise<void> {
 
 export async function getFitnessProfile(today: LocalDate): Promise<FitnessProfileView> {
   const window = periodWindow('30d', today);
-  const [allSessions, recentSessions, sets] = await Promise.all([
+  const [allSessions, recentSessions, sets, user] = await Promise.all([
     youContainer.sessions.getCompletedSessionsInRange('1970-01-01T00:00:00.000Z', window.endIso),
     window.startIso
       ? youContainer.sessions.getCompletedSessionsInRange(window.startIso, window.endIso)
@@ -431,11 +450,30 @@ export async function getFitnessProfile(today: LocalDate): Promise<FitnessProfil
       startInclusive: null,
       endExclusive: window.endIso,
     }),
+    youContainer.profile.get(),
   ]);
+  const declared = {
+    preferences: preferenceLines(user),
+    suggestions: profileSuggestions(user),
+  };
   const workoutCount = allSessions.length;
   if (workoutCount === 0) {
-    return { workoutCount: 0, mostTrained: null, recent: null, exercises: [] };
+    return {
+      workoutCount: 0,
+      mostTrained: null,
+      recent: null,
+      exercises: [],
+      averageWorkouts: null,
+      averageDuration: null,
+      ...declared,
+    };
   }
+  const earliest = allSessions[0]?.completedAt ?? window.endIso;
+  const spanDays = Math.max(7, inclusiveSpanDays(earliest, today));
+  const durationMinutes = allSessions.reduce(
+    (total, session) => total + elapsedMinutes(session.startedAt, session.completedAt),
+    0,
+  );
   const recent =
     recentSessions.length === 0
       ? 'No workouts in the last 30 days.'
@@ -445,6 +483,9 @@ export async function getFitnessProfile(today: LocalDate): Promise<FitnessProfil
     mostTrained: mostCommonLabel(allSessions.map((session) => session.name)),
     recent,
     exercises: frequentExercises(uniqueExerciseSessions(sets)),
+    averageWorkouts: `${averageWorkoutsPerWeek(workoutCount, spanDays).toFixed(1)} per week`,
+    averageDuration: `${Math.round(durationMinutes / workoutCount)} minutes`,
+    ...declared,
   };
 }
 

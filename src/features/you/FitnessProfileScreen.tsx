@@ -1,6 +1,6 @@
-import { Stack, useFocusEffect } from 'expo-router';
+import { router, Stack, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { getFitnessProfile, type FitnessProfileView } from '@/application/you/getYou';
 import { AppText } from '@/components/AppText';
@@ -43,46 +43,105 @@ export function FitnessProfileScreen() {
             Your fitness profile could not be loaded.
           </AppText>
         ) : null}
-        {profile && profile.workoutCount === 0 ? (
-          <AppText role="body" color="textSecondary">
-            No completed workouts yet.
-          </AppText>
+
+        {profile && profile.suggestions.length > 0 ? (
+          <View style={styles.block}>
+            <SectionLabel>Complete your profile</SectionLabel>
+            {profile.suggestions.map((suggestion) => (
+              <Pressable
+                key={suggestion.id}
+                accessibilityRole="button"
+                onPress={() => router.push(suggestion.route)}
+                style={styles.link}
+              >
+                <AppText role="body" color="textSecondary">
+                  {suggestion.label} →
+                </AppText>
+              </Pressable>
+            ))}
+          </View>
         ) : null}
-        {profile && profile.workoutCount > 0 ? (
-          <>
-            <View style={styles.block}>
-              <SectionLabel>Training</SectionLabel>
-              <AppText role="metric">{profile.workoutCount}</AppText>
+
+        {profile ? (
+          <View style={styles.block}>
+            <SectionLabel>My preferences</SectionLabel>
+            {profile.preferences.length === 0 ? (
               <AppText role="body" color="textSecondary">
-                completed workouts
+                Preferences you save will show up here.
               </AppText>
-            </View>
-            {profile.mostTrained ? (
-              <View style={styles.block}>
-                <SectionLabel>Most trained</SectionLabel>
-                <AppText role="title3">{profile.mostTrained}</AppText>
-              </View>
-            ) : null}
-            {profile.recent ? (
-              <View style={styles.block}>
-                <SectionLabel>Recently</SectionLabel>
-                <AppText role="body">{profile.recent}</AppText>
-              </View>
-            ) : null}
-            {profile.exercises.length > 0 ? (
-              <View style={styles.block}>
-                <SectionLabel>Frequently used exercises</SectionLabel>
-                {profile.exercises.map((name) => (
-                  <AppText key={name} role="body">
-                    {name}
+            ) : (
+              profile.preferences.map((line) => (
+                <View key={line.label} style={styles.line}>
+                  <AppText role="caption" color="textMuted">
+                    {line.label}
                   </AppText>
-                ))}
-              </View>
-            ) : null}
-          </>
+                  <AppText role="body">{line.value}</AppText>
+                </View>
+              ))
+            )}
+            <Pressable accessibilityRole="button" onPress={() => router.push('/you/preferences')} style={styles.link}>
+              <AppText role="bodyStrong" color="primary">
+                Edit preferences →
+              </AppText>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {profile ? (
+          <View style={styles.block}>
+            <SectionLabel>My training patterns</SectionLabel>
+            {profile.workoutCount === 0 ? (
+              <AppText role="body" color="textSecondary">
+                No completed workouts yet.
+              </AppText>
+            ) : (
+              <>
+                <AppText role="body" color="textSecondary">
+                  {profile.workoutCount} completed workouts
+                </AppText>
+                {profile.averageWorkouts ? (
+                  <Pattern label="Average workouts" value={profile.averageWorkouts} />
+                ) : null}
+                {profile.averageDuration ? (
+                  <Pattern label="Average duration" value={profile.averageDuration} />
+                ) : null}
+                {profile.mostTrained ? (
+                  <Pattern label="Most frequently performed workout" value={profile.mostTrained} />
+                ) : null}
+                {profile.recent ? (
+                  <AppText role="small" color="textMuted">
+                    {profile.recent}
+                  </AppText>
+                ) : null}
+                {profile.exercises.length > 0 ? (
+                  <View style={styles.line}>
+                    <AppText role="caption" color="textMuted">
+                      Frequently used exercises
+                    </AppText>
+                    {profile.exercises.map((name) => (
+                      <AppText key={name} role="body">
+                        {name}
+                      </AppText>
+                    ))}
+                  </View>
+                ) : null}
+              </>
+            )}
+          </View>
         ) : null}
       </ScrollView>
     </Screen>
+  );
+}
+
+function Pattern({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.line}>
+      <AppText role="caption" color="textMuted">
+        {label}
+      </AppText>
+      <AppText role="body">{value}</AppText>
+    </View>
   );
 }
 
@@ -93,6 +152,13 @@ const styles = StyleSheet.create({
     gap: spacing[6],
   },
   block: {
-    gap: spacing[2],
+    gap: spacing[3],
+  },
+  line: {
+    gap: spacing[1],
+  },
+  link: {
+    minHeight: 44,
+    justifyContent: 'center',
   },
 });
